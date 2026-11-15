@@ -1,0 +1,30 @@
+{
+  "name": "ticketpay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TicketPay: event ticketing with an integrated payment facilitator and Ethereum NFT tickets (academic prototype)",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "infra:up": "docker compose -f infrastructure/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "db:generate": "pnpm --filter @ticketpay/database generate",
+    "db:migrate": "pnpm --filter @ticketpay/database migrate:deploy",
+    "db:seed": "pnpm --filter @ticketpay/database seed",
+    "db:reset": "pnpm --filter @ticketpay/database reset",
+    "dev:api": "pnpm --filter @ticketpay/api dev",
+    "dev:web": "pnpm --filter @ticketpay/web dev",
+    "dev": "pnpm --parallel --filter @ticketpay/api --filter @ticketpay/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @ticketpay/api test",
+    "secrets": "node infrastructure/scripts/generate-secrets.mjs",
+    "build:packages": "pnpm --filter @ticketpay/shared build && pnpm --filter @ticketpay/database build",
+    "predev": "pnpm build:packages",
+    "pretest": "pnpm build:packages",
+    "pretypecheck": "pnpm build:packages",
+    "db:posters": "pnpm --filter @ticketpay/database posters"
+  }
+}

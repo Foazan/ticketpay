@@ -1,0 +1,35 @@
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AdminController } from './admin/admin.controller';
+import { AuditModule } from './audit/audit.module';
+import { AuthModule } from './auth/auth.module';
+import { AuthGuard, CsrfGuard, RolesGuard } from './auth/guards';
+import { ConfigModule } from './config/config.module';
+import { DbModule } from './db/db.module';
+import { EventsModule } from './events/events.module';
+import { GateController } from './gate/gate.controller';
+import { HealthController } from './health/health.controller';
+import { OrganizerController } from './organizer/organizer.controller';
+import { TicketsController } from './tickets/tickets.controller';
+
+@Module({
+  imports: [
+    ConfigModule,
+    DbModule,
+    AuditModule,
+    AuthModule,
+    EventsModule,
+    // Baseline: 120 requests per minute per client. Auth routes set stricter limits.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+  ],
+  controllers: [HealthController, OrganizerController, TicketsController, GateController, AdminController],
+  providers: [
+    // Order matters: rate limit, CSRF, authentication, then role check.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
+})
+export class AppModule {}

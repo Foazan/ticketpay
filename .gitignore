@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+.env
+.env.local
+*.log
+coverage
+.turbo
+blockchain/artifacts
+blockchain/cache
+apps/api/uploads
+*.tsbuildinfo
+next-env.d.ts
