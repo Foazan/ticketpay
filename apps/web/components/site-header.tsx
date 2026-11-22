@@ -18,6 +18,8 @@ export async function SiteHeader() {
           <Link href="/events" className="text-ink-secondary hover:text-ink-primary">Explore Events</Link>
           {user?.role === 'GATE_STAFF' ? (
             <Link href="/gate" className="text-ink-secondary hover:text-ink-primary">Gate</Link>
+          ) : user?.role === 'ORGANIZER' ? (
+            <Link href="/organizer" className="text-ink-secondary hover:text-ink-primary">Dashboard</Link>
           ) : (
             <Link href="/buyer/tickets" className="text-ink-secondary hover:text-ink-primary">My Tickets</Link>
           )}

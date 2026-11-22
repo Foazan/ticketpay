@@ -11,7 +11,10 @@ import { DbModule } from './db/db.module';
 import { EventsModule } from './events/events.module';
 import { GateModule } from './gate/gate.module';
 import { HealthController } from './health/health.controller';
+import { MediaModule } from './media/media.module';
 import { OrganizerController } from './organizer/organizer.controller';
+import { OrganizerEventsService } from './organizer/organizer-events.service';
+import { ReconciliationService } from './reconciliation/reconciliation.service';
 import { PaymentsModule } from './payments/payments.module';
 import { QueueModule } from './queue/queue.module';
 import { TicketsController } from './tickets/tickets.controller';
@@ -27,11 +30,14 @@ import { TicketsController } from './tickets/tickets.controller';
     ChainModule,
     PaymentsModule,
     GateModule,
+    MediaModule,
     // Baseline: 120 requests per minute per client. Auth routes set stricter limits.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
   ],
   controllers: [HealthController, OrganizerController, TicketsController, AdminController],
   providers: [
+    OrganizerEventsService,
+    ReconciliationService,
     // Order matters: rate limit, CSRF, authentication, then role check.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },

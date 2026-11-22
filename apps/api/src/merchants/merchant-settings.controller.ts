@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, NotFoundException, Param, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Inject, NotFoundException, Param, Post, Put, Query } from '@nestjs/common';
 import {
   encryptSecret,
   events,
@@ -14,7 +14,7 @@ import {
 } from '@ticketpay/database';
 import type { SessionUser } from '@ticketpay/shared';
 import * as argon2 from 'argon2';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
 import { isUniqueViolation } from '../common/db-errors';
@@ -120,27 +120,40 @@ export class MerchantSettingsController {
     return { webhookSecret: secret, notice: 'Copy this secret now. It will not be shown again. Deliveries from now on are signed with it.' };
   }
 
+  /** Section 6.4: one row per order, with provider and internal status and ticket issuance. */
   @Get('transactions')
-  transactions(@CurrentUser() user: SessionUser) {
+  transactions(@CurrentUser() user: SessionUser, @Query('status') status?: string, @Query('eventId') eventId?: string) {
+    const filters: SQL[] = [eq(orders.merchantId, this.merchantId(user))];
+    if (status && ['PENDING', 'PAID', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) filters.push(eq(orders.status, status as 'PAID'));
+    if (eventId) filters.push(eq(orders.eventId, eventId));
     return this.db
       .select({
         orderId: orders.id,
         orderNumber: orders.orderNumber,
         buyerName: orders.buyerName,
+        eventId: orders.eventId,
         event: events.title,
+        ticketTypes: sql<string>`(select string_agg(tt.name || ' × ' || oi.quantity, ', ' order by tt.tier_code) from order_items oi join ticket_tiers tt on tt.id = oi.tier_id where oi.order_id = ${orders.id})`,
+        quantity: sql<number>`(select coalesce(sum(oi.quantity), 0) from order_items oi where oi.order_id = ${orders.id})`.mapWith(Number),
+        subtotal: orders.subtotal,
+        serviceFee: orders.serviceFee,
         total: orders.total,
         orderStatus: orders.status,
         paymentId: payments.id,
         paymentReference: payments.reference,
         paymentStatus: payments.status,
+        provider: payments.provider,
         providerStatus: payments.providerStatus,
         method: payments.method,
+        paidAt: payments.paidAt,
+        ticketsIssued: sql<number>`(select count(*) from tickets t where t.order_id = ${orders.id})`.mapWith(Number),
+        ticketsMinted: sql<number>`(select count(*) from tickets t where t.order_id = ${orders.id} and t.mint_status = 'MINTED')`.mapWith(Number),
         createdAt: orders.createdAt,
       })
       .from(orders)
       .innerJoin(events, eq(orders.eventId, events.id))
       .leftJoin(payments, eq(payments.orderId, orders.id))
-      .where(eq(orders.merchantId, this.merchantId(user)))
+      .where(and(...filters))
       .orderBy(desc(orders.createdAt))
       .limit(200);
   }

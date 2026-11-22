@@ -10,6 +10,7 @@ import { formatDateTime } from '@/lib/format';
 import { requireRole } from '@/lib/require-role';
 import { cookieHeader } from '@/lib/session';
 import { mintBadge, redeemLabel, shortHex, ticketStatusBadge, type TicketDetail } from '@/lib/tickets';
+import { posterSrc } from '@/lib/media';
 
 export const metadata: Metadata = { title: 'Ticket' };
 export const dynamic = 'force-dynamic';
@@ -63,7 +64,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ticketI
 
       <section className="card grid overflow-hidden shadow-card md:grid-cols-[17rem_1fr] md:gap-2 md:p-6">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={t.posterPath} alt="" className="aspect-[8/5] w-full object-cover md:rounded-md" />
+        <img src={posterSrc(t.posterPath)} alt="" className="aspect-[8/5] w-full object-cover md:rounded-md" />
         <div className="space-y-2 p-6 md:row-span-2 md:py-0 md:pr-0">
           <h1 className="text-h2">{t.eventTitle}</h1>
           <p className="text-body-sm text-ink-secondary">{formatDateTime(t.eventStartAt)}</p>

@@ -52,6 +52,8 @@ const schema = z
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
   // disabled: tickets stay off-chain. local: a Hardhat node (pnpm chain:node). sepolia: the Ethereum Sepolia testnet.
   CHAIN_MODE: z.enum(['disabled', 'local', 'sepolia']).default('disabled'),
+  // Where uploaded and generated event posters are stored. Relative paths are from the API's working directory.
+  UPLOAD_DIR: z.string().default('storage'),
   LOCAL_RPC_URL: z.string().url().default('http://127.0.0.1:8545'),
   SEPOLIA_RPC_URL: z.string().trim().default(''),
   CHAIN_ID: z.coerce.number().int().optional(),

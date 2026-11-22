@@ -2,6 +2,7 @@ import { formatRupiah, type EventSummary } from '@ticketpay/shared';
 import { CalendarDays, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/format';
+import { posterSrc } from '@/lib/media';
 
 export function EventCard({ event }: { event: EventSummary }) {
   return (
@@ -9,7 +10,7 @@ export function EventCard({ event }: { event: EventSummary }) {
       <div className="relative aspect-[8/5] bg-brand-navy-700">
         {/* Local SVG poster; a plain img avoids the image optimizer for SVG. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={event.posterPath} alt="" className="h-full w-full object-cover" loading="lazy" />
+        <img src={posterSrc(event.posterPath)} alt="" className="h-full w-full object-cover" loading="lazy" />
         <span className="absolute left-3 top-3 rounded-full bg-bg-surface px-3 py-1 text-caption">{event.category.name}</span>
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">

@@ -7,6 +7,7 @@ import { TierSelector } from '@/components/tier-selector';
 import { Badge } from '@/components/ui';
 import { ApiError, serverFetch } from '@/lib/api';
 import { formatDate, formatTime } from '@/lib/format';
+import { posterSrc } from '@/lib/media';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
       <article className="space-y-8">
         <div className="overflow-hidden rounded-lg bg-brand-navy-700">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={event.posterPath} alt={`Poster for ${event.title}`} className="aspect-[8/5] w-full object-cover" />
+          <img src={posterSrc(event.posterPath)} alt={`Poster for ${event.title}`} className="aspect-[8/5] w-full object-cover" />
         </div>
         <div className="space-y-2">
           <Badge>{event.category.name}</Badge>

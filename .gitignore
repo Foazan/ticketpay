@@ -16,3 +16,4 @@ playwright-report
 blockchain/typechain-types
 blockchain/deployments/localhost.json
 dump.rdb
+apps/api/storage/

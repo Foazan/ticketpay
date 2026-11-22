@@ -12,8 +12,12 @@ export default function SellPage() {
           Organizers publish events, set ticket categories and quotas, and follow every transaction, ledger entry and reconciliation result from one
           dashboard. New organizer accounts are reviewed by a TicketPay administrator before they can publish.
         </p>
-        <p className="text-body-sm text-ink-muted">The organizer registration form is part of the next build. Existing organizers can log in now.</p>
-        <ButtonLink href="/login">Organizer login</ButtonLink>
+        <div className="flex flex-wrap gap-3">
+          <ButtonLink href="/register/organizer">Register as an organizer</ButtonLink>
+          <ButtonLink href="/login?next=/organizer" variant="secondary">
+            Organizer login
+          </ButtonLink>
+        </div>
       </div>
     </div>
   );

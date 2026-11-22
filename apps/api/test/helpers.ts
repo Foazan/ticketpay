@@ -34,6 +34,8 @@ export interface TestContext {
   pool: Pool;
   ids: Awaited<ReturnType<typeof seedDatabase>>['ids'];
   login: (email: string) => Promise<ReturnType<typeof request.agent>>;
+  /** An anonymous client, without a session. */
+  http: () => ReturnType<typeof request>;
   close: () => Promise<void>;
 }
 
@@ -76,6 +78,7 @@ export async function bootTestApp(overrides: Record<string, string> = {}): Promi
     pool,
     ids,
     login,
+    http: () => request(app.getHttpServer()),
     close: async () => {
       await app.close();
       await pool.end();

@@ -6,7 +6,7 @@ Digital event ticketing platform with an integrated Payment Facilitator and Ethe
 
 ## Status
 
-Phases 2 (foundation), 4 (Payment Facilitator), 5 (NFT tickets) and 6 (QR and gate) are done.
+Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitator), 5 (NFT tickets) and 6 (QR and gate) are done.
 
 | Area | State |
 |---|---|
@@ -19,12 +19,14 @@ Phases 2 (foundation), 4 (Payment Facilitator), 5 (NFT tickets) and 6 (QR and ga
 | ERC-721 ticket contract (non-transferable, role-based), minting after verified payment on a local chain or Sepolia | Done |
 | Web: homepage, explore, event detail, login, sign up, checkout, demo payment page, payment status, My Tickets, ticket page with ownership record | Done |
 | Rotating single-use entry QR, gate scanner (camera and manual code), single-use redemption, on-chain redeem | Done |
-| Organizer and admin dashboards | Landing pages only; organizer finance data is available through the API |
+| Organizer registration and dashboard: events, ticket categories, posters, transactions, sales analytics, ledger, reconciliation, merchant settings | Done |
+| Admin dashboard | Landing page only (Phase 7) |
 | Reconciliation report, simulated refund | Not built (Phase 7) |
 
 How payments work, the API, and how merchants verify webhooks: [docs/payments.md](docs/payments.md).
 How NFT tickets work, the custodial model and Sepolia setup: [docs/blockchain.md](docs/blockchain.md).
 How the entry QR and the gate work: [docs/gate.md](docs/gate.md).
+The organizer dashboard, event rules and reconciliation: [docs/organizer.md](docs/organizer.md).
 
 ## Stack
 
@@ -93,7 +95,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 84 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, QR and gate validation, and minting and on-chain redeem (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 95 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, QR and gate validation, and minting and on-chain redeem (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|
@@ -102,7 +104,7 @@ The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call 
 | T4 duplicate notification, T6 out-of-order | payments and midtrans suites |
 | T5 invalid provider signature | midtrans suite |
 | T7 merchant webhook failure, T8 invalid HMAC | payments suite |
-| T20 to T24 access control and overselling | app and payments suites |
+| T20 to T24 access control and overselling | app, payments and organizer suites (every organizer write route is checked for T20 and T21; T24 also through quota edits) |
 | T9 to T14 contract rules | contract suite (`pnpm chain:test`) |
 | Mint only after verified payment, no double mint, crash recovery | chain suite |
 | T15 to T19 QR and gate, T22 gate staff cannot touch payments | gate suite, and the browser suite (camera scanning with a fake camera) |

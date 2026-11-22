@@ -1,4 +1,5 @@
 import { formatRupiah, type QuoteLine } from '@ticketpay/shared';
+import { posterSrc } from '@/lib/media';
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -27,7 +28,7 @@ export function OrderSummary(props: {
       <div className="flex items-center gap-4">
         {props.posterPath && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={props.posterPath} alt="" className="h-16 w-16 rounded-md object-cover" />
+          <img src={posterSrc(props.posterPath)} alt="" className="h-16 w-16 rounded-md object-cover" />
         )}
         <div>
           <p className="text-title">{props.title}</p>

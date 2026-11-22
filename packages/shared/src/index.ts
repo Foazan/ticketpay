@@ -312,3 +312,68 @@ export interface GateResult {
   /** Whether the NFT is held by the holder's custodial address. SKIPPED when the chain is off, not minted yet or unreachable. */
   chainOwner?: 'MATCH' | 'MISMATCH' | 'SKIPPED';
 }
+
+// ---------- Organizer: events and tiers ----------
+
+/** Validation shared by the event form and the API. Dates are ISO strings from the browser. */
+const eventFields = {
+  title: z.string().trim().min(4, 'Use at least 4 characters').max(120),
+  categoryId: z.string().trim().min(1, 'Choose a category').max(40),
+  description: z.string().trim().min(20, 'Describe the event in at least 20 characters').max(4000),
+  city: z.string().trim().min(2).max(60),
+  venue: z.string().trim().min(2).max(160),
+  startAt: z.coerce.date(),
+  endAt: z.coerce.date(),
+  requiresIdCheck: z.boolean().default(false),
+};
+
+export const createEventSchema = z
+  .object(eventFields)
+  .refine((e) => e.endAt > e.startAt, { message: 'The event must end after it starts', path: ['endAt'] })
+  .refine((e) => e.startAt.getTime() > Date.now(), { message: 'The event must start in the future', path: ['startAt'] });
+export type CreateEventInput = z.infer<typeof createEventSchema>;
+
+export const updateEventSchema = z
+  .object(eventFields)
+  .partial()
+  .refine((e) => !(e.startAt && e.endAt) || e.endAt > e.startAt, { message: 'The event must end after it starts', path: ['endAt'] });
+export type UpdateEventInput = z.infer<typeof updateEventSchema>;
+
+/** Prices in whole rupiah. Payment providers need a positive amount, so free tickets are not supported. */
+export const MIN_TICKET_PRICE = 1_000;
+export const MAX_TICKET_PRICE = 100_000_000;
+export const MAX_TIER_QUOTA = 100_000;
+/** The tier code is a uint8 on-chain. */
+export const MAX_TIERS_PER_EVENT = 20;
+
+const tierFields = {
+  name: z.string().trim().min(2).max(60),
+  price: z.coerce.number().int().min(MIN_TICKET_PRICE, `The minimum price is Rp ${MIN_TICKET_PRICE.toLocaleString('id-ID')}`).max(MAX_TICKET_PRICE),
+  quota: z.coerce.number().int().min(1, 'At least 1 ticket').max(MAX_TIER_QUOTA),
+  salesStartAt: z.coerce.date(),
+  salesEndAt: z.coerce.date(),
+};
+export const tierSchema = z.object(tierFields).refine((t) => t.salesEndAt > t.salesStartAt, { message: 'Sales must end after they start', path: ['salesEndAt'] });
+export type TierInput = z.infer<typeof tierSchema>;
+export const updateTierSchema = z
+  .object(tierFields)
+  .partial()
+  .refine((t) => !(t.salesStartAt && t.salesEndAt) || t.salesEndAt > t.salesStartAt, { message: 'Sales must end after they start', path: ['salesEndAt'] });
+export type UpdateTierInput = z.infer<typeof updateTierSchema>;
+
+export const merchantProfileSchema = z.object({
+  contactPerson: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(8).max(20),
+  address: z.string().trim().min(5).max(300),
+  description: z.string().trim().max(1000).optional().default(''),
+  // Free text such as a bank name. Never account numbers in this prototype.
+  settlementAccountNote: z.string().trim().max(200).optional().default(''),
+});
+export type MerchantProfileInput = z.infer<typeof merchantProfileSchema>;
+
+export const POSTER_MAX_BYTES = 2 * 1024 * 1024;
+export const POSTER_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+/** Reconciliation result for one payment (section 6.6). */
+export const RECON_STATUSES = ['MATCHED', 'PENDING', 'MISMATCH', 'INVESTIGATE'] as const;
+export type ReconStatus = (typeof RECON_STATUSES)[number];

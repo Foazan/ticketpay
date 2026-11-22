@@ -155,7 +155,7 @@ export class EventsService {
 
   async categories() {
     return this.db
-      .select({ name: eventCategories.name, slug: eventCategories.slug })
+      .select({ id: eventCategories.id, name: eventCategories.name, slug: eventCategories.slug })
       .from(eventCategories)
       .orderBy(asc(eventCategories.name));
   }
