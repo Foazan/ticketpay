@@ -14,7 +14,10 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args: { solcVersion: string
   if (process.env.HARDHAT_NATIVE_SOLC === '1') return runSuper(args);
   const solc = require('solc');
   if (args.solcVersion !== SOLC_VERSION) throw new Error(`The bundled solc is ${SOLC_VERSION}; ${args.solcVersion} was requested.`);
-  return { compilerPath: require.resolve('solc/soljson.js'), isSolcJs: true, version: args.solcVersion, longVersion: solc.version() };
+  // solcjs reports "0.8.28+commit.7893614a.Emscripten.clang". The bytecode and metadata are identical to the native
+  // compiler's, but Etherscan only knows "v0.8.28+commit.7893614a", so drop the platform suffix for verification.
+  const longVersion = String(solc.version()).replace(/\.Emscripten\.clang$/, '');
+  return { compilerPath: require.resolve('solc/soljson.js'), isSolcJs: true, version: args.solcVersion, longVersion };
 });
 
 /** MetaMask exports keys without the 0x prefix; accept both. */
