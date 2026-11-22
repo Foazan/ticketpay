@@ -10,7 +10,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // Browser extensions often add attributes to <html> before React loads. This only silences
+    // mismatches on this one element; real hydration errors in the page still show.
+    <html lang="en" suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="flex-1">{children}</main>
