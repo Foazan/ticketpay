@@ -1,14 +1,16 @@
 'use client';
 
-import { formatRupiah, type TicketTierView } from '@ticketpay/shared';
+import { MAX_TICKETS_PER_ORDER, formatRupiah, type TicketTierView } from '@ticketpay/shared';
 import { Clock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatDateTime } from '@/lib/format';
 import { Button } from './ui';
 
-const MAX_PER_ORDER = 6;
+const MAX_PER_ORDER = MAX_TICKETS_PER_ORDER;
 
-export function TierSelector({ tiers }: { tiers: TicketTierView[] }) {
+export function TierSelector({ eventSlug, tiers }: { eventSlug: string; tiers: TicketTierView[] }) {
+  const router = useRouter();
   const [qty, setQty] = useState<Record<string, number>>({});
   const totalQty = Object.values(qty).reduce((a, b) => a + b, 0);
   const subtotal = tiers.reduce((sum, t) => sum + (qty[t.id] ?? 0) * t.price, 0);
@@ -45,9 +47,19 @@ export function TierSelector({ tiers }: { tiers: TicketTierView[] }) {
         <span className="text-ink-secondary">Subtotal ({totalQty} {totalQty === 1 ? 'ticket' : 'tickets'})</span>
         <span className="text-title">{formatRupiah(subtotal)}</span>
       </div>
-      {/* Checkout is built in the next phase together with the payment backend. */}
-      <Button disabled title="Checkout arrives with the payment phase">Buy tickets</Button>
-      <p className="text-caption text-ink-muted">Checkout is not available yet in this build. The service fee will be shown separately at checkout.</p>
+      <Button
+        disabled={totalQty === 0}
+        onClick={() => {
+          const items = Object.entries(qty)
+            .filter(([, n]) => n > 0)
+            .map(([id, n]) => `${id}:${n}`)
+            .join(',');
+          router.push(`/checkout?event=${encodeURIComponent(eventSlug)}&items=${encodeURIComponent(items)}`);
+        }}
+      >
+        {totalQty === 0 ? 'Select tickets to continue' : 'Buy tickets'}
+      </Button>
+      <p className="text-caption text-ink-muted">Up to {MAX_PER_ORDER} tickets per order. The service fee is shown separately at checkout.</p>
     </aside>
   );
 }

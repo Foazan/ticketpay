@@ -41,7 +41,8 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'REFUNDED',
 ]);
 export const paymentProviderEnum = pgEnum('payment_provider', ['MOCK', 'MIDTRANS']);
-export const webhookOutcomeEnum = pgEnum('webhook_event_outcome', ['APPLIED', 'DUPLICATE', 'IGNORED_STALE', 'REJECTED']);
+export const webhookOutcomeEnum = pgEnum('webhook_event_outcome', ['APPLIED', 'DUPLICATE', 'IGNORED_STALE', 'UNSUPPORTED', 'REJECTED']);
+export const paymentMethodEnum = pgEnum('payment_method', ['VA', 'QRIS', 'EWALLET']);
 export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', ['PENDING', 'DELIVERED', 'RETRYING', 'FAILED']);
 export const ledgerEntryTypeEnum = pgEnum('ledger_entry_type', [
   'GROSS_SALE',
@@ -281,6 +282,8 @@ export const payments = pgTable(
     amount: integer().notNull(),
     status: paymentStatusEnum().notNull().default('PENDING'),
     provider: paymentProviderEnum().notNull(),
+    // Method group the buyer picked at checkout. The provider may report a more specific paymentType.
+    method: paymentMethodEnum().notNull(),
     providerStatus: text(),
     providerTransactionId: text(),
     paymentType: text(),
@@ -304,6 +307,8 @@ export const paymentWebhookEvents = pgTable(
     id: id(),
     provider: paymentProviderEnum().notNull(),
     paymentId: text().references(() => payments.id),
+    // Where the update came from: MOCK, MIDTRANS or SYSTEM (expiry sweeper).
+    source: text().notNull(),
     // provider + order_id + transaction_status + status_code + fraud_status
     dedupeKey: text().notNull().unique(),
     signatureValid: boolean().notNull(),

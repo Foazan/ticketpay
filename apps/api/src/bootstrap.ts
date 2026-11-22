@@ -14,7 +14,8 @@ export function configureApp(app: INestApplication): void {
     origin: env.WEB_ORIGIN,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['content-type', CSRF_HEADER, 'idempotency-key'],
+    allowedHeaders: ['content-type', CSRF_HEADER, 'idempotency-key', 'authorization'],
+    exposedHeaders: ['idempotent-replayed'],
   });
   app.enableShutdownHooks();
 }

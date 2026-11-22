@@ -58,6 +58,8 @@ export class CsrfGuard implements CanActivate {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
     const skip = this.reflector.getAllAndOverride<boolean>(SKIP_CSRF, [context.getHandler(), context.getClass()]);
     if (skip) return true;
+    // Server-to-server calls with a merchant API key carry no cookie, so they cannot be forged cross-site.
+    if (req.headers.authorization?.startsWith('Bearer ') && !req.headers.cookie?.includes(SESSION_COOKIE)) return true;
     if (req.headers[CSRF_HEADER] !== CSRF_HEADER_VALUE) throw new ForbiddenException('Missing CSRF header');
     return true;
   }

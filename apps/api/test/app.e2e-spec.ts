@@ -1,58 +1,34 @@
 // End-to-end tests against a real PostgreSQL database (ticketpay_test).
 // Covers the Phase 2 access-control cases from the test matrix: T20, T21 (read side), T22, T23.
-process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://ticketpay:ticketpay@localhost:5432/ticketpay_test';
-process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-test-secret';
-
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import {
-  createDatabase,
   DEMO_PASSWORD,
   events,
   merchants,
   orderItems,
   orders,
   payments,
-  runMigrations,
-  seedDatabase,
   ticketTiers,
   tickets,
   users,
   type Database,
 } from '@ticketpay/database';
-import { CSRF_HEADER, CSRF_HEADER_VALUE } from '@ticketpay/shared';
 import { eq } from 'drizzle-orm';
-import type { Pool } from 'pg';
 import request from 'supertest';
-import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/bootstrap';
+import { bootTestApp, csrf, type TestContext } from './helpers';
 
+let ctx: TestContext;
 let app: INestApplication;
 let db: Database;
-let pool: Pool;
-let ids: Awaited<ReturnType<typeof seedDatabase>>['ids'];
+let ids: TestContext['ids'];
 let otherMerchantEventId: string;
 let buyer2TicketId: string;
 
-const csrf = { [CSRF_HEADER]: CSRF_HEADER_VALUE };
-
-// One login per account: the login route is rate limited to 10 per minute per client.
-const sessions = new Map<string, ReturnType<typeof request.agent>>();
-async function loginAs(email: string) {
-  const cached = sessions.get(email);
-  if (cached) return cached;
-  const agent = request.agent(app.getHttpServer());
-  const res = await agent.post('/v1/auth/login').set(csrf).send({ email, password: DEMO_PASSWORD });
-  expect(res.status).toBe(200);
-  sessions.set(email, agent);
-  return agent;
-}
+const loginAs = (email: string) => ctx.login(email);
 
 beforeAll(async () => {
-  ({ db, pool } = createDatabase(process.env.DATABASE_URL!));
-  await runMigrations(db);
-  ids = (await seedDatabase(db)).ids;
+  ctx = await bootTestApp();
+  ({ app, db, ids } = ctx);
 
   // An event that belongs to a different merchant than the demo organizer.
   const [nusa] = await db.select().from(merchants).where(eq(merchants.businessName, 'Nusa Konferensi'));
@@ -92,6 +68,7 @@ beforeAll(async () => {
       amount: order.total,
       status: 'PAID',
       provider: 'MOCK',
+      method: 'VA',
       expiresAt: new Date(Date.now() + 900_000),
     })
     .returning();
@@ -111,16 +88,9 @@ beforeAll(async () => {
     .returning();
   buyer2TicketId = ticket.id;
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  app = moduleRef.createNestApplication();
-  configureApp(app);
-  await app.init();
 });
 
-afterAll(async () => {
-  await app.close();
-  await pool.end();
-});
+afterAll(() => ctx.close());
 
 describe('health', () => {
   it('reports the database and the sandbox modes', async () => {

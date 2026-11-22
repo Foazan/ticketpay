@@ -11,3 +11,5 @@ blockchain/cache
 apps/api/uploads
 *.tsbuildinfo
 next-env.d.ts
+test-results
+playwright-report

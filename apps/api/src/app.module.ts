@@ -11,6 +11,8 @@ import { EventsModule } from './events/events.module';
 import { GateController } from './gate/gate.controller';
 import { HealthController } from './health/health.controller';
 import { OrganizerController } from './organizer/organizer.controller';
+import { PaymentsModule } from './payments/payments.module';
+import { QueueModule } from './queue/queue.module';
 import { TicketsController } from './tickets/tickets.controller';
 
 @Module({
@@ -20,6 +22,8 @@ import { TicketsController } from './tickets/tickets.controller';
     AuditModule,
     AuthModule,
     EventsModule,
+    QueueModule,
+    PaymentsModule,
     // Baseline: 120 requests per minute per client. Auth routes set stricter limits.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
   ],

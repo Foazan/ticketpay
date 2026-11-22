@@ -62,7 +62,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ sl
         </section>
       </article>
       <div className="lg:sticky lg:top-8 lg:h-fit">
-        <TierSelector tiers={event.tiers} />
+        <TierSelector eventSlug={event.slug} tiers={event.tiers} />
       </div>
     </div>
   );

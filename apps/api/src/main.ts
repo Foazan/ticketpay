@@ -7,7 +7,8 @@ import { ENV } from './config/config.module';
 import type { Env } from './config/env';
 
 async function main() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody keeps the exact request bytes, needed to verify HMAC signatures.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app);
   const env = app.get<Env>(ENV);
   await app.listen(env.API_PORT);

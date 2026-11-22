@@ -2,6 +2,8 @@
 import * as argon2 from 'argon2';
 import { sql } from 'drizzle-orm';
 import type { Database } from './client';
+import { encryptSecret, generateWebhookSecret } from './crypto';
+import { eq } from 'drizzle-orm';
 import {
   eventCategories,
   events,
@@ -292,6 +294,15 @@ export async function seedDatabase(db: Database) {
     nusa: await merchant(organizer2.id, 'Nusa Konferensi', 'Conference organizer', 'Dewi Anggraini', '081300002222', 'Jl. Rasuna Said 5, Jakarta', 'Runs technology conferences, seminars and workshops.', 'APPROVED'),
     garuda: await merchant(organizer3.id, 'Garuda Sport & Community', 'Sports and community organizer', 'Yoga Hartono', '081300003333', 'Jl. Dharmahusada 20, Surabaya', 'Organizes sports tournaments and campus community events.', 'APPROVED'),
   };
+  // Arunika sends its payment webhooks to the API's built-in demo receiver, which verifies the HMAC.
+  const encKey = process.env.WEBHOOK_SECRET_ENC_KEY;
+  if (encKey) {
+    const apiUrl = process.env.API_PUBLIC_URL ?? `http://localhost:${process.env.API_PORT ?? 4000}`;
+    await db
+      .update(merchants)
+      .set({ webhookUrl: `${apiUrl}/v1/dev/webhook-receiver`, webhookSecretEnc: encryptSecret(generateWebhookSecret(), encKey) })
+      .where(eq(merchants.id, m.arunika.id));
+  }
   await merchant(organizer4.id, 'Pentas Kota Nusantara', 'Event promoter', 'Satria Nugraha', '081300004444', 'Jl. Braga 8, Bandung', 'New promoter waiting for administrator approval.', 'PENDING');
 
   const categoryRows = await db

@@ -25,6 +25,7 @@
     "predev": "pnpm build:packages",
     "pretest": "pnpm build:packages",
     "pretypecheck": "pnpm build:packages",
-    "db:posters": "pnpm --filter @ticketpay/database posters"
+    "db:posters": "pnpm --filter @ticketpay/database posters",
+    "test:e2e": "pnpm --filter @ticketpay/web exec playwright test"
   }
 }

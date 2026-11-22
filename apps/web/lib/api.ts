@@ -22,7 +22,7 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 /** Browser-side call. Sends the session cookie and the CSRF header on state-changing requests. */
-export async function apiFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function apiFetch<T>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
   const method = init.method ?? 'GET';
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -30,6 +30,7 @@ export async function apiFetch<T>(path: string, init: { method?: string; body?: 
     headers: {
       ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
       ...(method !== 'GET' ? { [CSRF_HEADER]: CSRF_HEADER_VALUE } : {}),
+      ...init.headers,
     },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
