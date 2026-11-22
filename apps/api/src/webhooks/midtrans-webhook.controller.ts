@@ -45,7 +45,7 @@ export class MidtransWebhookController {
   @Post('midtrans')
   @HttpCode(200)
   async handle(@Body() body: MidtransNotification, @Ip() ip: string) {
-    if (!this.env.MIDTRANS_SERVER_KEY) {
+    if (!this.env.MIDTRANS_SERVER_KEY || this.env.midtransSignatureKeys.length === 0) {
       throw new ServiceUnavailableException('Midtrans is not configured on this server');
     }
     const required = ['order_id', 'status_code', 'gross_amount', 'signature_key', 'transaction_status'] as const;
@@ -53,8 +53,11 @@ export class MidtransWebhookController {
       await this.payments.recordRejected('MIDTRANS', redactMidtrans(body ?? {}), 'missing fields', ip);
       throw new UnauthorizedException('Invalid notification');
     }
-    if (!verifyMidtransSignature(body as Required<typeof body>, this.env.MIDTRANS_SERVER_KEY)) {
-      this.log.warn(`Rejected notification with an invalid signature for order_id ${body.order_id}`);
+    if (!verifyMidtransSignature(body as Required<typeof body>, this.env.midtransSignatureKeys)) {
+      this.log.warn(
+        `Rejected notification with an invalid signature for order_id ${body.order_id}. ` +
+          'If this keeps happening for real Midtrans notifications, check MIDTRANS_SIGNATURE_SECRET_KEY (Settings > Access Keys > Signature Secret Key).',
+      );
       await this.payments.recordRejected('MIDTRANS', redactMidtrans(body), 'invalid signature', ip);
       throw new UnauthorizedException('Invalid signature');
     }

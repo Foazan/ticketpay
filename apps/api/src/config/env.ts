@@ -32,6 +32,9 @@ const schema = z
   PAYMENT_PROVIDER: z.enum(['mock', 'midtrans']).default('mock'),
   MIDTRANS_SERVER_KEY: z.string().default(''),
   MIDTRANS_CLIENT_KEY: z.string().default(''),
+  // Since 28 Oct 2026 Midtrans signs notifications with the Signature Secret Key, not the Server Key.
+  // Comma-separated: while rotating, list the new key and the old one so retried notifications still verify.
+  MIDTRANS_SIGNATURE_SECRET_KEY: z.string().default(''),
   MIDTRANS_IS_PRODUCTION: z.enum(['true', 'false']).default('false'),
   // Comma-separated subset of VA,QRIS,EWALLET that is enabled in your Midtrans sandbox account.
   MIDTRANS_ENABLED_METHODS: z.string().default('VA,QRIS,EWALLET'),
@@ -57,12 +60,20 @@ const schema = z
         message: 'PAYMENT_PROVIDER=midtrans needs MIDTRANS_SERVER_KEY (Midtrans dashboard > Sandbox > Settings > Access Keys). Or set PAYMENT_PROVIDER=mock to use labelled demo payments.',
       });
     }
+    if (env.PAYMENT_PROVIDER === 'midtrans' && !env.MIDTRANS_SIGNATURE_SECRET_KEY.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['MIDTRANS_SIGNATURE_SECRET_KEY'],
+        message:
+          'PAYMENT_PROVIDER=midtrans needs MIDTRANS_SIGNATURE_SECRET_KEY to verify payment notifications. Midtrans dashboard (Sandbox) > Settings > Access Keys > Signature Secret Key (click the eye icon).',
+      });
+    }
     if (env.MIDTRANS_IS_PRODUCTION === 'true') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['MIDTRANS_IS_PRODUCTION'], message: 'This prototype only supports the Midtrans sandbox.' });
     }
   });
 
-export type Env = z.infer<typeof schema> & { apiPublicUrl: string };
+export type Env = z.infer<typeof schema> & { apiPublicUrl: string; midtransSignatureKeys: string[] };
 
 export function loadEnv(): Env {
   loadDotenv();
@@ -72,5 +83,11 @@ export function loadEnv(): Env {
     // Never print values here: they may be secrets.
     throw new Error(`Invalid environment configuration:\n${lines}\nSee .env.example for every variable and where to get it.`);
   }
-  return { ...parsed.data, apiPublicUrl: parsed.data.API_PUBLIC_URL ?? `http://localhost:${parsed.data.API_PORT}` };
+  return {
+    ...parsed.data,
+    apiPublicUrl: parsed.data.API_PUBLIC_URL ?? `http://localhost:${parsed.data.API_PORT}`,
+    midtransSignatureKeys: parsed.data.MIDTRANS_SIGNATURE_SECRET_KEY.split(',')
+      .map((k) => k.trim())
+      .filter(Boolean),
+  };
 }

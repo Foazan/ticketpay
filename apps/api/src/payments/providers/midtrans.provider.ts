@@ -32,17 +32,22 @@ export function formatJakarta(d: Date): string {
   return `${j.getUTCFullYear()}-${pad(j.getUTCMonth() + 1)}-${pad(j.getUTCDate())} ${pad(j.getUTCHours())}:${pad(j.getUTCMinutes())}:${pad(j.getUTCSeconds())} +0700`;
 }
 
-/** signature_key = SHA512(order_id + status_code + gross_amount + server key), lowercase hex. */
-export function midtransSignature(orderId: string, statusCode: string, grossAmount: string, serverKey: string): string {
-  return createHash('sha512').update(orderId + statusCode + grossAmount + serverKey).digest('hex');
+/**
+ * signature_key = SHA512(order_id + status_code + gross_amount + Signature Secret Key), lowercase hex.
+ * Midtrans switched from the Server Key to the separate Signature Secret Key on 28 Oct 2026
+ * (docs.midtrans.com/docs/access-keys). The two differ once a new Server Key is generated.
+ */
+export function midtransSignature(orderId: string, statusCode: string, grossAmount: string, signatureSecretKey: string): string {
+  return createHash('sha512').update(orderId + statusCode + grossAmount + signatureSecretKey).digest('hex');
 }
 
+/** True if the notification was signed with any of the given keys (more than one only while rotating). */
 export function verifyMidtransSignature(
   body: { order_id: string; status_code: string; gross_amount: string; signature_key: string },
-  serverKey: string,
+  signatureSecretKeys: string[],
 ): boolean {
-  const expected = midtransSignature(body.order_id, body.status_code, body.gross_amount, serverKey);
-  return safeEqual(expected, String(body.signature_key).toLowerCase());
+  const received = String(body.signature_key).toLowerCase();
+  return signatureSecretKeys.some((key) => safeEqual(midtransSignature(body.order_id, body.status_code, body.gross_amount, key), received));
 }
 
 /** Midtrans Snap Sandbox adapter. The server key never leaves this process. */

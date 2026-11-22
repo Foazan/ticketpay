@@ -10,7 +10,7 @@ How TicketPay takes payments for organizers (merchants), and how a merchant inte
 2. On **Pay**, the web app calls `POST /v1/orders`. The API holds the tickets for 15 minutes with a conditional update per tier, so two buyers can never hold the same last ticket. A `CHECK (sold_count + held_count <= quota)` constraint backs this up in the database.
 3. The web app calls `POST /v1/payments` with an `Idempotency-Key`. The API creates the Midtrans Snap transaction on the server and returns its `redirectUrl`.
 4. The buyer pays on Midtrans (or on the demo page in mock mode).
-5. Midtrans sends a notification to `POST /v1/webhooks/midtrans`. The API checks the signature, confirms the status with Midtrans' Get Status API, checks the amount, and applies the update.
+5. Midtrans sends a notification to `POST /v1/webhooks/midtrans`. The API checks the signature (made with the Signature Secret Key), confirms the status with Midtrans' Get Status API, checks the amount, and applies the update.
 6. In **one database transaction**: the notification is recorded under a unique dedupe key, the payment moves forward (never backwards), the order and quota change, ledger entries are written, ticket rows are issued, and a merchant webhook delivery is queued.
 7. A BullMQ worker delivers the signed webhook to the merchant, retrying with exponential backoff.
 8. The buyer's status page polls `GET /v1/orders/:id`. The redirect back from Midtrans is never treated as proof of payment.
@@ -97,6 +97,8 @@ Buyer (own orders) or merchant API key (own payments). 404 otherwise.
 
 For Midtrans only. Set it as the Payment Notification URL in the Midtrans sandbox dashboard.
 
+The `signature_key` is checked as SHA512(order_id + status_code + gross_amount + **Signature Secret Key**). Midtrans used the Server Key here until 28 October 2026 and now uses the separate Signature Secret Key; on any account that generated a new Server Key the two differ. Set `MIDTRANS_SIGNATURE_SECRET_KEY` (Settings, Access Keys, Signature Secret Key). When you regenerate it, set `new,old` for a short while so notifications that Midtrans retries with the old signature still verify, then remove the old one.
+
 ### Organizer settings (organizer session)
 
 | Route | Purpose |
@@ -154,10 +156,13 @@ In development, the seeded organizer (Arunika) sends its webhooks to `POST /v1/d
 
 The automated tests use a local fake of Midtrans. To check the real sandbox:
 
-1. Create a Midtrans account and switch the dashboard to **Sandbox**. Copy the server key and client key from Settings, Access Keys.
-2. In `.env` set `PAYMENT_PROVIDER=midtrans`, `MIDTRANS_SERVER_KEY` and `MIDTRANS_CLIENT_KEY`. If a method group is not active in your account, remove it from `MIDTRANS_ENABLED_METHODS`.
-3. Midtrans must reach your API to send notifications. Run a tunnel such as `ngrok http 4000` and set its HTTPS URL plus `/v1/webhooks/midtrans` as the Payment Notification URL in the sandbox dashboard settings.
+1. Create a Midtrans account and switch the dashboard to **Sandbox**. In Settings, Access Keys:
+   - **Generate server key** with **Snap Checkout: Write** and **Core API: Read**; leave everything else at None. Copy it when it is shown.
+   - Click the eye icon next to **Signature Secret Key** and copy it.
+2. In `.env` set `PAYMENT_PROVIDER=midtrans`, `MIDTRANS_SERVER_KEY` and `MIDTRANS_SIGNATURE_SECRET_KEY`. The client key is not needed. If a method group is not active in your account, remove it from `MIDTRANS_ENABLED_METHODS`.
+3. Midtrans must reach your API to send notifications. Run a tunnel such as `ngrok http 4000` (ngrok 3.30 or newer) and set its HTTPS URL plus `/v1/webhooks/midtrans` in Settings, Payment, Notification URL. Copy the whole host, including `.ngrok-free.app`. If Midtrans rejects the URL as an IP address, use your free static ngrok domain: `ngrok http --url=<your-domain>.ngrok-free.app 4000`.
 4. Restart the API and buy a ticket. On the Midtrans page, pick a method and complete it with the sandbox simulator:
    - BCA Virtual Account: copy the VA number into https://simulator.sandbox.midtrans.com/bca/va/index
    - QRIS or GoPay on desktop: copy the QR image URL into https://simulator.sandbox.midtrans.com/v2/qris/index
-5. The status page turns to **Payment verified** once the notification arrives. If it does not, check the API log and the `payment_webhook_events` table for REJECTED rows.
+5. The status page turns to **Payment verified** once the notification arrives. If it does not, check the API log and the `payment_webhook_events` table for REJECTED rows. "Rejected notification with an invalid signature" means `MIDTRANS_SIGNATURE_SECRET_KEY` is missing or wrong.
+6. A payment whose notifications were all rejected is not lost: when its 15-minute hold ends, the expiry sweep asks Midtrans' Status API and applies it as paid.

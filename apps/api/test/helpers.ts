@@ -17,6 +17,7 @@ export const TEST_ENV: Record<string, string> = {
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
   PAYMENT_PROVIDER: 'mock',
   MIDTRANS_SERVER_KEY: '',
+  MIDTRANS_SIGNATURE_SECRET_KEY: '',
   RUN_WORKERS: 'true',
   WEBHOOK_RETRY_BASE_MS: '50',
   WEBHOOK_MAX_ATTEMPTS: '4',

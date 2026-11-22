@@ -13,6 +13,9 @@ import { midtransSignature } from '../src/payments/providers/midtrans.provider';
 import { bootTestApp, csrf, type TestContext } from './helpers';
 
 const SERVER_KEY = 'SB-Mid-server-TESTKEY';
+// Different from the server key, as it is for any account that generated a new Server Key.
+const SIGNATURE_KEY = 'test-signature-secret-key';
+const OLD_SIGNATURE_KEY = 'old-signature-secret-key';
 const SLUG = 'soundwave-festival-2026';
 
 let ctx: TestContext;
@@ -51,6 +54,8 @@ beforeAll(async () => {
   ctx = await bootTestApp({
     PAYMENT_PROVIDER: 'midtrans',
     MIDTRANS_SERVER_KEY: SERVER_KEY,
+    // New key first, previous key second: the rotation window the Midtrans docs recommend.
+    MIDTRANS_SIGNATURE_SECRET_KEY: `${SIGNATURE_KEY},${OLD_SIGNATURE_KEY}`,
     MIDTRANS_SNAP_URL: `${base}/snap/v1/transactions`,
     MIDTRANS_API_URL: base,
     MIDTRANS_ENABLED_METHODS: 'VA,QRIS',
@@ -99,7 +104,7 @@ function notification(reference: string, transaction_status: string, opts: { sta
     transaction_id: 'trx-1',
     va_numbers: [{ bank: 'bca', va_number: '12345678901' }],
     ...(opts.fraud_status ? { fraud_status: opts.fraud_status } : {}),
-    signature_key: midtransSignature(reference, status_code, gross_amount, opts.key ?? SERVER_KEY),
+    signature_key: midtransSignature(reference, status_code, gross_amount, opts.key ?? SIGNATURE_KEY),
   };
 }
 
@@ -155,6 +160,17 @@ describe('notifications', () => {
     const audit = await ctx.db.select().from(auditLogs).where(eq(auditLogs.action, 'webhook.signature_rejected'));
     expect(audit.length).toBeGreaterThan(0);
     expect((await post({ order_id: pay.body.reference })).status).toBe(401);
+  });
+
+  it('verifies with the Signature Secret Key, not the Server Key', async () => {
+    const { pay } = await createPayment();
+    setProviderStatus(pay.body.reference, 'settlement');
+    // Signed the pre-28-October-2026 way, with the Server Key: rejected.
+    expect((await post(notification(pay.body.reference, 'settlement', { key: SERVER_KEY }))).status).toBe(401);
+    // Signed with the previous Signature Secret Key during rotation: accepted.
+    const res = await post(notification(pay.body.reference, 'settlement', { key: OLD_SIGNATURE_KEY }));
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe('APPLIED');
   });
 
   it('T1 via Midtrans: a verified settlement marks the payment paid, writes the ledger and issues tickets', async () => {
