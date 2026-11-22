@@ -5,6 +5,7 @@ import { AdminController } from './admin/admin.controller';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard, CsrfGuard, RolesGuard } from './auth/guards';
+import { ChainModule } from './chain/chain.module';
 import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
 import { EventsModule } from './events/events.module';
@@ -23,6 +24,7 @@ import { TicketsController } from './tickets/tickets.controller';
     AuthModule,
     EventsModule,
     QueueModule,
+    ChainModule,
     PaymentsModule,
     // Baseline: 120 requests per minute per client. Auth routes set stricter limits.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),

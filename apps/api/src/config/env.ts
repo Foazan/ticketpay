@@ -50,7 +50,20 @@ const schema = z
   // First retry delay for merchant webhooks; doubles each attempt.
   WEBHOOK_RETRY_BASE_MS: z.coerce.number().int().min(10).default(30_000),
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(6),
+  // disabled: tickets stay off-chain. local: a Hardhat node (pnpm chain:node). sepolia: the Ethereum Sepolia testnet.
   CHAIN_MODE: z.enum(['disabled', 'local', 'sepolia']).default('disabled'),
+  LOCAL_RPC_URL: z.string().url().default('http://127.0.0.1:8545'),
+  SEPOLIA_RPC_URL: z.string().default(''),
+  CHAIN_ID: z.coerce.number().int().optional(),
+  // Empty: read from blockchain/deployments/<network>.json written by the deploy script.
+  TICKET_CONTRACT_ADDRESS: z.string().default(''),
+  // Backend wallet holding MINTER, GATE and EVENT_MANAGER roles. Local mode falls back to Hardhat's public test account #1.
+  SIGNER_PRIVATE_KEY: z.string().default(''),
+  // Derives each buyer's custodial address. Changing it changes every future address, so set it once.
+  CUSTODIAL_MASTER_SECRET: z.string().default(''),
+  CHAIN_CONFIRMATIONS: z.coerce.number().int().min(1).max(12).default(1),
+  MINT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  MINT_RETRY_BASE_MS: z.coerce.number().int().min(10).default(15_000),
   })
   .superRefine((env, ctx) => {
     if (env.PAYMENT_PROVIDER === 'midtrans' && !env.MIDTRANS_SERVER_KEY) {
@@ -67,6 +80,24 @@ const schema = z
         message:
           'PAYMENT_PROVIDER=midtrans needs MIDTRANS_SIGNATURE_SECRET_KEY to verify payment notifications. Midtrans dashboard (Sandbox) > Settings > Access Keys > Signature Secret Key (click the eye icon).',
       });
+    }
+    if (env.CHAIN_MODE !== 'disabled' && env.CUSTODIAL_MASTER_SECRET.length < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CUSTODIAL_MASTER_SECRET'],
+        message: `CHAIN_MODE=${env.CHAIN_MODE} needs CUSTODIAL_MASTER_SECRET (at least 32 characters). Run "pnpm secrets" and paste the output into .env`,
+      });
+    }
+    if (env.CHAIN_MODE === 'sepolia') {
+      if (!env.SEPOLIA_RPC_URL) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SEPOLIA_RPC_URL'], message: 'CHAIN_MODE=sepolia needs SEPOLIA_RPC_URL, for example an Alchemy or Infura Sepolia endpoint. See docs/blockchain.md.' });
+      }
+      if (!env.SIGNER_PRIVATE_KEY) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SIGNER_PRIVATE_KEY'], message: 'CHAIN_MODE=sepolia needs SIGNER_PRIVATE_KEY: a test wallet funded with Sepolia ETH. Never use a wallet that holds real funds.' });
+      }
+      if (env.CHAIN_ID != null && env.CHAIN_ID !== 11155111) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CHAIN_ID'], message: 'CHAIN_MODE=sepolia expects CHAIN_ID=11155111. This prototype never uses Ethereum mainnet.' });
+      }
     }
     if (env.MIDTRANS_IS_PRODUCTION === 'true') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['MIDTRANS_IS_PRODUCTION'], message: 'This prototype only supports the Midtrans sandbox.' });

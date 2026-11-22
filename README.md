@@ -6,7 +6,7 @@ Digital event ticketing platform with an integrated Payment Facilitator and Ethe
 
 ## Status
 
-Phases 2 (foundation) and 4 (Payment Facilitator) are done.
+Phases 2 (foundation), 4 (Payment Facilitator) and 5 (NFT tickets) are done.
 
 | Area | State |
 |---|---|
@@ -16,12 +16,14 @@ Phases 2 (foundation) and 4 (Payment Facilitator) are done.
 | Checkout with 15-minute quota hold, Payments API with idempotency, Midtrans Snap Sandbox and labelled mock adapters | Done |
 | Signature-verified Midtrans notifications, forward-only state machine, ledger, ticket issuance (off-chain rows) | Done |
 | Signed merchant webhooks with retries (BullMQ), merchant API keys, expiry sweep | Done |
-| Web: homepage, explore, event detail, login, sign up, checkout, demo payment page, payment status, My Tickets list | Done |
+| ERC-721 ticket contract (non-transferable, role-based), minting after verified payment on a local chain or Sepolia | Done |
+| Web: homepage, explore, event detail, login, sign up, checkout, demo payment page, payment status, My Tickets, ticket page with ownership record | Done |
 | Organizer, gate and admin dashboards | Landing pages only; organizer finance data is available through the API |
 | Reconciliation report, simulated refund | Not built (Phase 7) |
-| Smart contract, minting on Sepolia, QR validation at the gate | Not built (Phases 5, 6) |
+| Rotating QR codes, gate validation and on-chain redeem | Not built (Phase 6) |
 
 How payments work, the API, and how merchants verify webhooks: [docs/payments.md](docs/payments.md).
+How NFT tickets work, the custodial model and Sepolia setup: [docs/blockchain.md](docs/blockchain.md).
 
 ## Stack
 
@@ -29,7 +31,8 @@ How payments work, the API, and how merchants verify webhooks: [docs/payments.md
 - **API:** NestJS 11, TypeScript, REST
 - **Database:** PostgreSQL 16 with **Drizzle ORM** (see the note below)
 - **Payments:** Midtrans Snap Sandbox, or a clearly labelled mock mode that needs no credentials
-- **Queues:** Redis 7 with BullMQ (merchant webhook delivery, order expiry)
+- **Blockchain:** Solidity 0.8.28 with OpenZeppelin 5, Hardhat 2, ethers v6; Ethereum Sepolia testnet or a local Hardhat chain
+- **Queues:** Redis 7 with BullMQ (merchant webhook delivery, order expiry, minting)
 - **Tests:** Jest and Supertest against real PostgreSQL and Redis; Playwright for browser flows
 
 > **Why Drizzle and not Prisma:** the original plan named Prisma. It was replaced because Prisma's engine binaries could not be downloaded in the environment where this code is built and tested, which would have left the backend unverified. Drizzle is pure TypeScript and gives the same PostgreSQL schema and constraints.
@@ -41,6 +44,7 @@ apps/api            NestJS API (auth, events, organizer, tickets, gate, admin, a
 apps/web            Next.js web app
 packages/database   Drizzle schema, SQL migrations, seed, poster generator
 packages/shared     Zod schemas and types shared by API and web
+blockchain          TicketPayTicket contract, Hardhat tests, deploy and verify scripts
 infrastructure      docker-compose.yml and helper scripts
 ```
 
@@ -59,6 +63,8 @@ pnpm dev                # API on http://localhost:4000, web on http://localhost:
 ```
 
 `pnpm db:reset` drops everything, migrates and seeds again.
+
+Tickets are off-chain only until you turn the chain on. To mint them as NFTs on a local chain with no accounts needed, see [docs/blockchain.md](docs/blockchain.md#running-it-locally-no-accounts-needed).
 
 **Updating from an earlier version:** pull, run `pnpm install`, make sure `.env` has `WEBHOOK_SECRET_ENC_KEY` (from `pnpm secrets`) and compare it with `.env.example` for new variables, then `pnpm db:migrate` and `pnpm db:seed`.
 
@@ -86,7 +92,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 59 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks and data isolation.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 68 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation and minting (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|
@@ -96,7 +102,9 @@ The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call 
 | T5 invalid provider signature | midtrans suite |
 | T7 merchant webhook failure, T8 invalid HMAC | payments suite |
 | T20 to T24 access control and overselling | app and payments suites |
-| T9 to T19 blockchain and QR | not built yet |
+| T9 to T14 contract rules | contract suite (`pnpm chain:test`) |
+| Mint only after verified payment, no double mint, crash recovery | chain suite |
+| T15 to T19 QR and gate | not built yet |
 
 Browser tests (Playwright) run against a running stack with a freshly seeded database:
 
@@ -109,7 +117,7 @@ Other checks: `pnpm typecheck` and `pnpm build`.
 
 ## Environment variables
 
-Every variable is listed with its source in `.env.example`. Required: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` and `WEBHOOK_SECRET_ENC_KEY`. Midtrans keys are only needed with `PAYMENT_PROVIDER=midtrans`; Sepolia credentials come with the blockchain phase. A missing or invalid value stops the API at start-up with a message naming the variable.
+Every variable is listed with its source in `.env.example`. Required: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` and `WEBHOOK_SECRET_ENC_KEY`. Midtrans keys are only needed with `PAYMENT_PROVIDER=midtrans`; Chain settings are only needed with `CHAIN_MODE=local` or `sepolia` (see [docs/blockchain.md](docs/blockchain.md)). A missing or invalid value stops the API at start-up with a message naming the variable.
 
 ## Security notes
 
@@ -119,6 +127,8 @@ Every variable is listed with its source in `.env.example`. Required: `DATABASE_
 - Organizer and ticket queries filter by the merchant or user id from the session, never from the request.
 - The database refuses overselling through a CHECK constraint on `ticket_tiers`.
 - A ticket is issued only after the API applies a verified provider update. The browser's return from the payment page is never trusted.
+- NFTs are minted only by a backend worker after the PAID transition is committed. The contract also refuses a second mint for the same payment reference.
+- The blockchain signer key stays in the API process and is never logged or sent to the browser. Use test-only wallets: see the custodial note in [docs/blockchain.md](docs/blockchain.md#custodial-model-security-note).
 - The Midtrans server key, merchant API keys and webhook secrets never reach the browser. API keys are stored hashed; webhook secrets are encrypted with AES-256-GCM.
 
 ## Design

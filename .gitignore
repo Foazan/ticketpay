@@ -13,3 +13,6 @@ apps/api/uploads
 next-env.d.ts
 test-results
 playwright-report
+blockchain/typechain-types
+blockchain/deployments/localhost.json
+dump.rdb

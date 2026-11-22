@@ -96,7 +96,7 @@ describe('health', () => {
   it('reports the database and the sandbox modes', async () => {
     const res = await request(app.getHttpServer()).get('/v1/health');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'ok', paymentProvider: 'mock', chainMode: 'disabled' });
+    expect(res.body).toMatchObject({ status: 'ok', paymentProvider: 'mock', chainMode: 'disabled', chain: { mode: 'disabled', ready: false } });
   });
 });
 

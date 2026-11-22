@@ -133,7 +133,9 @@ export class PaymentsService {
     const replay = await this.findByKey(order.merchantId, scopedKey);
     if (replay) return { payment: await this.ensureProviderTransaction(replay, requestHash), replayed: true };
 
-    const [existingForOrder] = await this.db.select({ id: payments.id }).from(payments).where(eq(payments.orderId, order.id));
+    const [existingForOrder] = await this.db.select().from(payments).where(eq(payments.orderId, order.id));
+    // A concurrent request with the same key may have inserted between the two reads: that is a replay, not a conflict.
+    if (existingForOrder?.idempotencyKey === scopedKey) return { payment: await this.ensureProviderTransaction(existingForOrder, requestHash), replayed: true };
     if (existingForOrder) throw new ConflictException('A payment already exists for this order');
     if (order.status !== 'PENDING' || order.holdExpiresAt <= new Date()) {
       throw new ConflictException('This order can no longer be paid. Start a new checkout.');
@@ -298,8 +300,13 @@ export class PaymentsService {
       return { outcome, paymentId: payment.id, status: update.target, deliveries };
     });
 
-    // After commit: a queue outage cannot roll back a verified payment. The sweep re-enqueues.
+    // After commit: a queue outage cannot roll back a verified payment. The sweeps re-enqueue.
     for (const id of result.deliveries) await this.queues.enqueueWebhook(id);
+    // Minting starts only here: after the PAID transition is committed, which only a verified provider update can cause.
+    if (result.outcome === 'APPLIED' && result.status === 'PAID' && result.paymentId) {
+      const issued = await this.db.select({ id: tickets.id }).from(tickets).where(eq(tickets.paymentId, result.paymentId)).orderBy(tickets.seq);
+      for (const t of issued) await this.queues.enqueueMint(t.id);
+    }
     return { outcome: result.outcome, paymentId: result.paymentId, status: result.status };
   }
 
@@ -397,7 +404,7 @@ export class PaymentsService {
 
   /**
    * Creates one ticket row per seat, owned by the buyer, with mintStatus PENDING.
-   * Minting on Sepolia picks these up in the blockchain phase. Unique (paymentId, seq) makes this idempotent.
+   * The chain worker mints them after commit (see applyUpdate). Unique (paymentId, seq) makes this idempotent.
    */
   private async issueTickets(tx: Tx, payment: PaymentRow, order: typeof orders.$inferSelect) {
     const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id)).orderBy(orderItems.id);

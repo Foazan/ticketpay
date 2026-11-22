@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "blockchain"
 onlyBuiltDependencies:
   - argon2
   - "@nestjs/core"

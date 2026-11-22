@@ -46,7 +46,8 @@ test('a visitor browses, logs in, buys two tickets with a demo payment and sees 
   await page.getByRole('link', { name: 'View my tickets' }).click();
 
   await expect(page.getByRole('heading', { name: 'My Tickets' })).toBeVisible();
-  await expect(page.getByText('Soundwave Festival 2026')).toHaveCount(2);
+  // At least the two just bought (earlier runs may have left more).
+  await expect(page.getByText('Soundwave Festival 2026').nth(1)).toBeVisible();
 });
 
 test('a failed demo payment shows the failure page and releases the tickets', async ({ page }) => {
@@ -78,4 +79,24 @@ test('the payment status page cannot be faked from the URL', async ({ page }) =>
   });
   await page.goto(`/orders/${orderLink}/status?transaction_status=settlement&status_code=200`);
   await expect(page.getByRole('heading', { name: 'Waiting for payment' })).toBeVisible();
+});
+
+test('a ticket page shows its ownership record, and the NFT once minted when a chain is configured', async ({ page, request }) => {
+  const health = await (await request.get('http://localhost:4000/v1/health')).json();
+  await login(page, '/buyer/tickets');
+  await expect(page.getByRole('heading', { name: 'My Tickets' })).toBeVisible();
+  await page.getByRole('link', { name: /Soundwave Festival 2026/ }).first().click();
+  await expect(page).toHaveURL(/\/buyer\/tickets\/[a-z0-9]+$/);
+  await expect(page.getByRole('heading', { name: 'Ownership record' })).toBeVisible();
+  if (health.chainMode === 'disabled') {
+    await expect(page.getByText('Off-chain ticket')).toBeVisible();
+    return;
+  }
+  // The page refreshes itself until the mint is confirmed.
+  await expect(page.getByText(/^NFT #\d+ on /)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText('Mint transaction')).toBeVisible();
+  await expect(page.getByText('Payment reference')).toBeVisible();
+  // Never another buyer's ticket: an unknown id is a 404.
+  await page.goto('/buyer/tickets/not-a-real-ticket');
+  await expect(page.getByText(/not found|404/i).first()).toBeVisible();
 });

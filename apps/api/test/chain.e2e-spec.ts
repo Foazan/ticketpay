@@ -1,0 +1,192 @@
+// Minting end-to-end against a real (local Hardhat) chain.
+// Covers: mint only after verified payment, no mint for unpaid or failed payments, one token per ticket
+// under repeated notifications, crash recovery from contract state, custodial ownership and the ticket API.
+import { blockchainTransactions, events, orders, ticketTiers, tickets, users } from '@ticketpay/database';
+import { and, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { ChainClient } from '../src/chain/chain.client';
+import { MintService } from '../src/chain/mint.service';
+import { PaymentsService } from '../src/payments/payments.service';
+import { startChainNode, type ChainNode } from './chain-node';
+import { bootTestApp, csrf, waitFor, type TestContext } from './helpers';
+
+let ctx: TestContext;
+let node: ChainNode;
+let regular: { id: string; eventId: string };
+
+const SLUG = 'soundwave-festival-2026';
+const BUYER = 'buyer@ticketpay.example';
+
+async function checkout(email: string, quantity: number) {
+  await ctx.db.update(orders).set({ holdExpiresAt: new Date(Date.now() - 1000) }).where(and(eq(orders.buyerEmail, email), eq(orders.status, 'PENDING')));
+  await ctx.app.get(PaymentsService).expireStale();
+  const agent = await ctx.login(email);
+  const order = await agent
+    .post('/v1/orders')
+    .set(csrf)
+    .send({ eventSlug: SLUG, items: [{ tierId: regular.id, quantity }], checkoutKey: randomUUID(), buyerName: 'Rania Putri', buyerEmail: email });
+  expect(order.status).toBe(201);
+  const payment = await agent.post('/v1/payments').set(csrf).set('Idempotency-Key', randomUUID()).send({ orderId: order.body.id, method: 'VA' });
+  expect(payment.status).toBe(201);
+  return { agent, order: order.body, payment: payment.body };
+}
+
+const simulate = async (email: string, paymentId: string, outcome: 'paid' | 'failed') =>
+  (await ctx.login(email)).post(`/v1/dev/mock-payments/${paymentId}/simulate`).set(csrf).send({ outcome });
+
+const ticketsOf = (paymentId: string) => ctx.db.select().from(tickets).where(eq(tickets.paymentId, paymentId)).orderBy(tickets.seq);
+const totalMinted = async () => (await node.contract.getFunction('totalMinted')()) as bigint;
+
+async function waitMinted(paymentId: string, count: number) {
+  return waitFor(
+    async () => {
+      const rows = await ticketsOf(paymentId);
+      return rows.length === count && rows.every((t) => t.mintStatus === 'MINTED') ? rows : null;
+    },
+    20_000,
+    `${count} minted tickets for ${paymentId}`,
+  );
+}
+
+beforeAll(async () => {
+  node = await startChainNode();
+  ctx = await bootTestApp({
+    CHAIN_MODE: 'local',
+    LOCAL_RPC_URL: node.rpcUrl,
+    TICKET_CONTRACT_ADDRESS: node.address,
+    SIGNER_PRIVATE_KEY: '',
+    CUSTODIAL_MASTER_SECRET: 'c'.repeat(64),
+    MINT_RETRY_BASE_MS: '50',
+    MINT_MAX_ATTEMPTS: '3',
+  });
+  const [row] = await ctx.db
+    .select({ id: ticketTiers.id, eventId: ticketTiers.eventId })
+    .from(ticketTiers)
+    .innerJoin(events, eq(ticketTiers.eventId, events.id))
+    .where(and(eq(events.slug, SLUG), eq(ticketTiers.name, 'Regular')));
+  regular = row;
+}, 120_000);
+
+afterAll(async () => {
+  await ctx?.close();
+  await node?.stop();
+});
+
+describe('Chain (local Hardhat)', () => {
+  it('reports a ready chain in the health check', async () => {
+    const res = await ctx.app.get(ChainClient).status();
+    expect(res).toMatchObject({ ready: true, chainId: 31337, contractAddress: node.address, network: 'Local Hardhat chain' });
+  });
+
+  it('mints one token per ticket after a verified payment, owned by the buyer custodial address', async () => {
+    const before = await totalMinted();
+    const { payment } = await checkout(BUYER, 2);
+    // Paid but not yet verified: nothing exists to mint.
+    expect(await ticketsOf(payment.id)).toHaveLength(0);
+    expect((await simulate(BUYER, payment.id, 'paid')).status).toBe(200);
+
+    const minted = await waitMinted(payment.id, 2);
+    expect(await totalMinted()).toBe(before + 2n);
+
+    const [buyer] = await ctx.db.select().from(users).where(eq(users.email, BUYER));
+    expect(buyer.custodialAddress).toBe(ctx.app.get(ChainClient).custodialAddress(buyer.id));
+    for (const t of minted) {
+      const info = await node.contract.getFunction('ticketInfo')(BigInt(t.tokenId!));
+      expect(info.owner).toBe(buyer.custodialAddress);
+      expect(info.status).toBe(1n); // Valid
+      expect(info.paymentRef).toBe(t.paymentRefHash);
+      expect(Number(info.eventId)).toBeGreaterThan(0);
+    }
+    expect(new Set(minted.map((t) => t.tokenId)).size).toBe(2);
+
+    // The contract supply equals the sum of the event's tier quotas.
+    const [{ total }] = await ctx.db.select({ total: sql<number>`sum(${ticketTiers.quota})::int` }).from(ticketTiers).where(eq(ticketTiers.eventId, regular.eventId));
+    const info = await node.contract.getFunction('ticketInfo')(BigInt(minted[0].tokenId!));
+    expect(await node.contract.getFunction('maxSupply')(info.eventId)).toBe(BigInt(total));
+
+    const txs = await ctx.db.select().from(blockchainTransactions).where(and(eq(blockchainTransactions.type, 'MINT'), eq(blockchainTransactions.status, 'CONFIRMED')));
+    for (const t of minted) expect(txs.find((x) => x.ticketId === t.id)?.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it('shows the on-chain record in the buyer ticket API, without any key material', async () => {
+    const agent = await ctx.login(BUYER);
+    const list = await agent.get('/v1/tickets');
+    expect(list.status).toBe(200);
+    const minted = list.body.find((t: { mintStatus: string }) => t.mintStatus === 'MINTED');
+    expect(minted.chain).toMatchObject({ enabled: true, network: 'Local Hardhat chain', chainId: 31337, contractAddress: node.address });
+    expect(minted.chain.txHash).toMatch(/^0x/);
+    expect(minted.chain.txUrl).toBeNull(); // no public explorer for a local chain
+
+    const detail = await agent.get(`/v1/tickets/${minted.id}`);
+    expect(detail.body.chain.ownerAddress).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(detail.body.paymentRefHash).toMatch(/^0x/);
+    const raw = JSON.stringify([list.body, detail.body]).toLowerCase();
+    expect(raw).not.toContain('private');
+    expect(raw).not.toContain('59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+  });
+
+  it('repeated PAID notifications never mint twice', async () => {
+    const before = await totalMinted();
+    const { payment } = await checkout(BUYER, 1);
+    await Promise.all([simulate(BUYER, payment.id, 'paid'), simulate(BUYER, payment.id, 'paid'), simulate(BUYER, payment.id, 'paid')]);
+    await waitMinted(payment.id, 1);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await totalMinted()).toBe(before + 1n);
+  });
+
+  it('never mints for a failed or unpaid payment', async () => {
+    const before = await totalMinted();
+    const failed = await checkout(BUYER, 1);
+    await simulate(BUYER, failed.payment.id, 'failed');
+    await checkout('buyer2@ticketpay.example', 1); // left unpaid
+    await new Promise((r) => setTimeout(r, 800));
+    expect(await ticketsOf(failed.payment.id)).toHaveLength(0);
+    expect(await totalMinted()).toBe(before);
+  });
+
+  it('recovers from a crash after sending: the token is found on-chain, not minted again', async () => {
+    const { payment } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+    const before = await totalMinted();
+    // Simulate a process that lost the result: the database forgets the token.
+    await ctx.db.update(tickets).set({ mintStatus: 'PENDING', tokenId: null }).where(eq(tickets.id, t.id));
+    await ctx.db.update(blockchainTransactions).set({ status: 'SUBMITTED' }).where(eq(blockchainTransactions.ticketId, t.id));
+
+    const mints = ctx.app.get(MintService);
+    expect(await mints.processMint(t.id)).toBe('recovered');
+    const [after] = await ticketsOf(payment.id);
+    expect(after).toMatchObject({ mintStatus: 'MINTED', tokenId: t.tokenId });
+    expect(await totalMinted()).toBe(before);
+    expect(await mints.processMint(t.id)).toBe('already-minted');
+  });
+
+  it('does not mint a ticket that was cancelled before it reached the chain', async () => {
+    const { payment } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+    await ctx.db.update(tickets).set({ status: 'CANCELLED', mintStatus: 'PENDING', tokenId: null }).where(eq(tickets.id, t.id));
+    expect(await ctx.app.get(MintService).processMint(t.id)).toBe('skipped');
+    await ctx.db.update(tickets).set({ status: 'ACTIVE', mintStatus: 'MINTED', tokenId: t.tokenId }).where(eq(tickets.id, t.id));
+  });
+
+  // Keep last: it stops the chain node.
+  it('a chain outage never undoes a paid order: tickets are issued and wait for the chain', async () => {
+    await node.stop();
+    const { payment, agent } = await checkout(BUYER, 1);
+    expect((await simulate(BUYER, payment.id, 'paid')).status).toBe(200);
+    const [t] = await waitFor(
+      async () => {
+        const rows = await ticketsOf(payment.id);
+        return rows.length === 1 && rows[0].mintStatus === 'FAILED' ? rows : null;
+      },
+      15_000,
+      'mint to give up',
+    );
+    expect(t).toMatchObject({ status: 'ACTIVE', tokenId: null });
+    expect((await agent.get(`/v1/payments/${payment.id}`)).body.status).toBe('PAID');
+    expect(await ctx.app.get(ChainClient).status()).toMatchObject({ ready: false });
+    // Picked up again by the sweep once it has cooled down.
+    expect(await ctx.app.get(MintService).ticketsToSweep(new Date(Date.now() + 11 * 60_000))).toContain(t.id);
+  });
+});

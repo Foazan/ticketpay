@@ -15,6 +15,7 @@
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/throttler": "^6.3.0",
     "@paralleldrive/cuid2": "^2.3.1",
+    "@ticketpay/contracts": "workspace:*",
     "@ticketpay/database": "workspace:*",
     "@ticketpay/shared": "workspace:*",
     "argon2": "^0.41.1",
