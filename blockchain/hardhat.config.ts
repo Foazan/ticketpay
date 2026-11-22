@@ -17,14 +17,22 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args: { solcVersion: string
   return { compilerPath: require.resolve('solc/soljson.js'), isSolcJs: true, version: args.solcVersion, longVersion: solc.version() };
 });
 
-const sepoliaAccounts = process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
+/** MetaMask exports keys without the 0x prefix; accept both. */
+export function normalizeKey(key: string | undefined): string | undefined {
+  const k = key?.trim();
+  if (!k) return undefined;
+  return /^[0-9a-fA-F]{64}$/.test(k) ? `0x${k}` : k;
+}
+
+const deployerKey = normalizeKey(process.env.DEPLOYER_PRIVATE_KEY);
+const sepoliaAccounts = deployerKey ? [deployerKey] : [];
 
 const config: HardhatUserConfig = {
   solidity: { version: SOLC_VERSION, settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: 'cancun' } },
   networks: {
     hardhat: { chainId: 31337 },
     localhost: { url: process.env.LOCAL_RPC_URL || 'http://127.0.0.1:8545', chainId: 31337 },
-    sepolia: { url: process.env.SEPOLIA_RPC_URL || '', chainId: 11155111, accounts: sepoliaAccounts },
+    sepolia: { url: process.env.SEPOLIA_RPC_URL?.trim() || '', chainId: 11155111, accounts: sepoliaAccounts },
   },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY || '' },
   sourcify: { enabled: false },

@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ethers, network } from 'hardhat';
+import { normalizeKey } from '../hardhat.config';
 
 async function main() {
   const [deployer, localSecond] = await ethers.getSigners();
@@ -12,7 +13,8 @@ async function main() {
 
   // The backend signer: an explicit key, or Hardhat's second test account on a local chain.
   let signerAddress: string;
-  if (process.env.SIGNER_PRIVATE_KEY) signerAddress = new ethers.Wallet(process.env.SIGNER_PRIVATE_KEY).address;
+  const signerKey = normalizeKey(process.env.SIGNER_PRIVATE_KEY);
+  if (signerKey) signerAddress = new ethers.Wallet(signerKey).address;
   else if (network.name === 'localhost' || network.name === 'hardhat') signerAddress = localSecond.address;
   else throw new Error('Set SIGNER_PRIVATE_KEY in .env: the backend wallet that will mint and redeem.');
 

@@ -53,12 +53,16 @@ const schema = z
   // disabled: tickets stay off-chain. local: a Hardhat node (pnpm chain:node). sepolia: the Ethereum Sepolia testnet.
   CHAIN_MODE: z.enum(['disabled', 'local', 'sepolia']).default('disabled'),
   LOCAL_RPC_URL: z.string().url().default('http://127.0.0.1:8545'),
-  SEPOLIA_RPC_URL: z.string().default(''),
+  SEPOLIA_RPC_URL: z.string().trim().default(''),
   CHAIN_ID: z.coerce.number().int().optional(),
   // Empty: read from blockchain/deployments/<network>.json written by the deploy script.
   TICKET_CONTRACT_ADDRESS: z.string().default(''),
   // Backend wallet holding MINTER, GATE and EVENT_MANAGER roles. Local mode falls back to Hardhat's public test account #1.
-  SIGNER_PRIVATE_KEY: z.string().default(''),
+  // MetaMask exports keys without the 0x prefix; accept both.
+  SIGNER_PRIVATE_KEY: z
+    .string()
+    .default('')
+    .transform((k) => (/^[0-9a-fA-F]{64}$/.test(k.trim()) ? `0x${k.trim()}` : k.trim())),
   // Derives each buyer's custodial address. Changing it changes every future address, so set it once.
   CUSTODIAL_MASTER_SECRET: z.string().default(''),
   CHAIN_CONFIRMATIONS: z.coerce.number().int().min(1).max(12).default(1),

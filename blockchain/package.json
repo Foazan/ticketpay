@@ -12,7 +12,8 @@
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
     "verify:sepolia": "hardhat run scripts/verify.ts --network sepolia",
-    "typecheck": "hardhat compile --quiet && tsc --noEmit"
+    "typecheck": "hardhat compile --quiet && tsc --noEmit",
+    "check:sepolia": "hardhat run scripts/check.ts --network sepolia"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",

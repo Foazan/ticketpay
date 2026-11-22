@@ -97,9 +97,10 @@ You need three things. None of them costs money.
 
 Optional: an [Etherscan](https://etherscan.io/apis) API key in `ETHERSCAN_API_KEY` to publish the verified source code.
 
-Then:
+Private keys exported from MetaMask have no `0x` prefix; both forms work. Then:
 
 ```bash
+pnpm chain:check:sepolia    # free pre-flight: prints both addresses and balances, lists anything missing
 pnpm chain:deploy:sepolia   # deploys, grants the signer its roles, writes blockchain/deployments/sepolia.json
 pnpm chain:verify:sepolia   # optional: verified source on Etherscan
 ```
