@@ -101,6 +101,7 @@ Private keys exported from MetaMask have no `0x` prefix; both forms work. Then:
 
 ```bash
 pnpm chain:check:sepolia    # free pre-flight: prints both addresses and balances, lists anything missing
+pnpm chain:fund-signer      # optional: sends 0.02 SepoliaETH from the deployer to the signer (one faucet claim is enough)
 pnpm chain:deploy:sepolia   # deploys, grants the signer its roles, writes blockchain/deployments/sepolia.json
 pnpm chain:verify:sepolia   # optional: verified source on Etherscan
 ```
