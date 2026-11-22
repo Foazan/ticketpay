@@ -238,3 +238,77 @@ export const WEBHOOK_HEADERS = {
 } as const;
 /** Receivers should reject deliveries whose timestamp is older than this. */
 export const WEBHOOK_TOLERANCE_SECONDS = 300;
+
+// ---------- QR and gate ----------
+
+/** Prefix of every ticket QR payload. The rest is an opaque random token: no ids, no personal data. */
+export const QR_PREFIX = 'TP1.';
+/** A QR token is accepted for this long after it is issued. */
+export const QR_TTL_SECONDS = 90;
+/** The ticket page fetches a fresh QR this often, so a screenshot stops working quickly. */
+export const QR_REFRESH_SECONDS = 30;
+
+export interface TicketQr {
+  /** The exact text to encode in the QR code. */
+  qr: string;
+  expiresAt: string;
+  refreshInSeconds: number;
+}
+
+/**
+ * Normalises a manual validation code as typed by gate staff: case, spaces and dashes don't matter,
+ * and the look-alike letters O, I and L are read as 0, 1 and 1 (Crockford base32).
+ */
+export function normalizeValidationCode(raw: string): string | null {
+  let s = raw
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '')
+    .replace(/O/g, '0')
+    .replace(/[IL]/g, '1');
+  if (s.length === 10 && s.startsWith('TP')) s = s.slice(2);
+  if (!/^[0-9A-HJKMNP-TV-Z]{8}$/.test(s)) return null;
+  return `TP-${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+export const gateCheckSchema = z
+  .object({
+    eventId: z.string().trim().min(1).max(64),
+    qr: z.string().trim().max(200).optional(),
+    code: z.string().trim().max(40).optional(),
+  })
+  .refine((v) => Boolean(v.qr) !== Boolean(v.code), { message: 'Send either a scanned QR or a manual code, not both' });
+export type GateCheckInput = z.infer<typeof gateCheckSchema>;
+
+export const GATE_OUTCOMES = [
+  'VALID',
+  'ADMITTED',
+  'ALREADY_REDEEMED',
+  'INVALID',
+  'EXPIRED',
+  'WRONG_EVENT',
+  'NOT_PAID',
+  'CANCELLED',
+  'OWNERSHIP_MISMATCH',
+] as const;
+export type GateOutcome = (typeof GATE_OUTCOMES)[number];
+
+/** What the gate screen shows. Only what staff need to admit someone: no email, phone or payment data. */
+export interface GateResult {
+  outcome: GateOutcome;
+  /** True for VALID and ADMITTED. */
+  ok: boolean;
+  message: string;
+  method?: 'QR' | 'MANUAL_CODE';
+  ticket?: {
+    id: string;
+    holderName: string;
+    tierName: string;
+    seq: number;
+    eventTitle: string;
+    tokenId: string | null;
+  };
+  redeemedAt?: string;
+  redeemedBy?: string;
+  /** Whether the NFT is held by the holder's custodial address. SKIPPED when the chain is off, not minted yet or unreachable. */
+  chainOwner?: 'MATCH' | 'MISMATCH' | 'SKIPPED';
+}

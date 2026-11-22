@@ -28,6 +28,27 @@ export class Queues implements OnApplicationShutdown {
    * Queues the on-chain mint for an issued ticket. Only called for tickets of a backend-verified PAID payment.
    * The job id is derived from the ticket id, so a ticket is never queued twice at the same time.
    */
+  /** Queues the on-chain redeem for a ticket admitted at the gate. Runs after its mint, on the same queue. */
+  async enqueueRedeem(ticketId: string): Promise<void> {
+    if (this.env.CHAIN_MODE === 'disabled') return;
+    try {
+      await this.chain.add(
+        'redeem',
+        { ticketId },
+        {
+          jobId: `redeem-${ticketId}`,
+          attempts: this.env.MINT_MAX_ATTEMPTS + 2,
+          backoff: { type: 'exponential', delay: this.env.MINT_RETRY_BASE_MS },
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+    } catch (err) {
+      // The redemption row is committed with chainStatus PENDING; the chain sweep picks it up.
+      this.log.error(`Could not enqueue redeem for ticket ${ticketId}: ${(err as Error).message}`);
+    }
+  }
+
   async enqueueMint(ticketId: string): Promise<void> {
     if (this.env.CHAIN_MODE === 'disabled') return;
     try {

@@ -42,8 +42,9 @@ export class MintService {
     if (!row) return 'missing';
     const { ticket } = row;
     if (ticket.mintStatus === 'MINTED') return 'already-minted';
-    // A ticket refunded or cancelled before it reached the chain is never minted.
-    if (ticket.status !== 'ACTIVE') return 'skipped';
+    // A ticket refunded or cancelled before it reached the chain is never minted. One already admitted
+    // at the gate still is: it was paid for, and its on-chain redeem waits for this mint.
+    if (ticket.status === 'CANCELLED' || ticket.status === 'EXPIRED') return 'skipped';
     const chainId = this.chain.config.chainId!;
 
     // 1. An earlier attempt that got as far as sending a transaction.
@@ -130,7 +131,7 @@ export class MintService {
       .from(tickets)
       .where(
         and(
-          eq(tickets.status, 'ACTIVE'),
+          inArray(tickets.status, ['ACTIVE', 'REDEEMED']),
           or(
             and(inArray(tickets.mintStatus, ['PENDING', 'SUBMITTED']), lt(tickets.createdAt, new Date(now.getTime() - 60_000))),
             and(eq(tickets.mintStatus, 'FAILED'), lt(tickets.updatedAt, new Date(now.getTime() - 10 * 60_000))),

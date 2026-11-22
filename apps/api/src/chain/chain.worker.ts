@@ -6,6 +6,7 @@ import type { Env } from '../config/env';
 import { QUEUE_NAMES, Queues } from '../queue/queue.module';
 import { ChainClient } from './chain.client';
 import { MintService } from './mint.service';
+import { RedeemService } from './redeem.service';
 
 /**
  * Processes the chain queue with concurrency 1, so the signer sends one transaction at a time
@@ -22,6 +23,7 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly queues: Queues,
     private readonly chain: ChainClient,
     private readonly mints: MintService,
+    private readonly redeems: RedeemService,
   ) {}
 
   onModuleInit() {
@@ -30,11 +32,13 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     this.worker = new Worker(QUEUE_NAMES.chain, (job: Job) => this.handle(job), { connection: this.connection, concurrency: 1 });
     this.worker.on('error', (err) => this.log.error(`Worker error: ${err.message}`));
     this.worker.on('failed', (job, err) => {
-      if (!job || job.name !== 'mint') return;
+      if (!job || (job.name !== 'mint' && job.name !== 'redeem')) return;
       const final = job.attemptsMade >= (job.opts.attempts ?? 1);
       const reason = this.chain.errorText(err);
-      this.log.warn(`Mint for ticket ${job.data.ticketId} failed (attempt ${job.attemptsMade}${final ? ', will retry in the sweep' : ''}): ${reason}`);
-      if (final) void this.mints.markFailed(job.data.ticketId, reason).catch(() => undefined);
+      this.log.warn(`${job.name === 'mint' ? 'Mint' : 'Redeem'} for ticket ${job.data.ticketId} failed (attempt ${job.attemptsMade}${final ? ', will retry in the sweep' : ''}): ${reason}`);
+      if (!final) return;
+      const mark = job.name === 'mint' ? this.mints.markFailed(job.data.ticketId, reason) : this.redeems.markFailed(job.data.ticketId, reason);
+      void mark.catch(() => undefined);
     });
     void this.queues.chain
       .upsertJobScheduler('chain-sweep', { every: 60_000 }, { name: 'sweep', opts: { removeOnComplete: 10, removeOnFail: 50 } })
@@ -43,6 +47,7 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
 
   async handle(job: Job): Promise<unknown> {
     if (job.name === 'sweep') return this.sweep();
+    if (job.name === 'redeem') return this.redeems.processRedeem(job.data.ticketId as string);
     return this.mints.processMint(job.data.ticketId as string);
   }
 
@@ -50,8 +55,10 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     if (this.chain.configProblem()) return 0;
     const ids = await this.mints.ticketsToSweep();
     for (const id of ids) await this.queues.enqueueMint(id);
-    if (ids.length) this.log.log(`Sweep: ${ids.length} tickets re-queued for minting`);
-    return ids.length;
+    const redeemIds = await this.redeems.redemptionsToSweep();
+    for (const id of redeemIds) await this.queues.enqueueRedeem(id);
+    if (ids.length || redeemIds.length) this.log.log(`Sweep: ${ids.length} mints and ${redeemIds.length} redeems re-queued`);
+    return ids.length + redeemIds.length;
   }
 
   async onApplicationShutdown() {

@@ -135,6 +135,10 @@ export class ChainClient implements OnApplicationShutdown {
     return this.send(() => this.ticket().getFunction('mintTicket')(to, eventId, tier, paymentRef) as Promise<TransactionResponse>);
   }
 
+  sendRedeem(tokenId: bigint): Promise<TransactionResponse> {
+    return this.send(() => this.ticket().getFunction('redeem')(tokenId) as Promise<TransactionResponse>);
+  }
+
   /** After any failed send the local nonce may be ahead of the chain, so it is re-read on the next send. */
   private async send(fn: () => Promise<TransactionResponse>): Promise<TransactionResponse> {
     try {

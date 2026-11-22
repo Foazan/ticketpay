@@ -16,7 +16,11 @@ export async function SiteHeader() {
         <nav className="order-3 flex w-full items-center justify-center gap-8 text-label sm:order-none sm:w-auto" aria-label="Main">
           <Link href="/">Home</Link>
           <Link href="/events" className="text-ink-secondary hover:text-ink-primary">Explore Events</Link>
-          <Link href="/buyer/tickets" className="text-ink-secondary hover:text-ink-primary">My Tickets</Link>
+          {user?.role === 'GATE_STAFF' ? (
+            <Link href="/gate" className="text-ink-secondary hover:text-ink-primary">Gate</Link>
+          ) : (
+            <Link href="/buyer/tickets" className="text-ink-secondary hover:text-ink-primary">My Tickets</Link>
+          )}
         </nav>
         <div className="flex items-center gap-3">
           {user ? (

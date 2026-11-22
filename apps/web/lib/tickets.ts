@@ -9,11 +9,15 @@ export type ChainRecord = {
   tokenUrl: string | null;
   contractUrl: string | null;
   ownerAddress?: string | null;
+  /** Null until admitted. OFF_CHAIN when the chain is disabled. */
+  redeemStatus: 'PENDING' | 'CONFIRMED' | 'FAILED' | 'OFF_CHAIN' | null;
+  redeemTxHash: string | null;
+  redeemTxUrl: string | null;
 };
 
 export type TicketRow = {
   id: string;
-  status: string;
+  status: 'ACTIVE' | 'REDEEMED' | 'CANCELLED' | 'EXPIRED';
   mintStatus: 'PENDING' | 'SUBMITTED' | 'MINTED' | 'FAILED';
   tokenId: string | null;
   eventTitle: string;
@@ -22,11 +26,13 @@ export type TicketRow = {
   venue: string;
   city: string;
   posterPath: string;
+  eventEndAt: string;
   tierName: string;
+  redeemedAt: string | null;
   chain: ChainRecord;
 };
 
-export type TicketDetail = TicketRow & { holderName: string; paymentRefHash: string; onChainEventId: number; tierCode: number; seq: number };
+export type TicketDetail = TicketRow & { holderName: string; paymentRefHash: string; validationCode: string | null; onChainEventId: number; tierCode: number; seq: number };
 
 /** Badge text and tone for a ticket's on-chain state. */
 export function mintBadge(t: Pick<TicketRow, 'mintStatus' | 'tokenId' | 'chain'>): { label: string; tone: 'info' | 'pending' | 'neutral' } {
@@ -47,4 +53,33 @@ export function mintBadge(t: Pick<TicketRow, 'mintStatus' | 'tokenId' | 'chain'>
 /** 0x1234…abcd */
 export function shortHex(value: string, keep = 6): string {
   return value.length <= keep * 2 + 2 ? value : `${value.slice(0, keep + 2)}…${value.slice(-keep)}`;
+}
+
+/** Label and tone for the ticket's own status, as the buyer should read it. */
+export function ticketStatusBadge(t: Pick<TicketRow, 'status' | 'eventEndAt'>): { label: string; tone: 'success' | 'neutral' | 'failed' } {
+  if (t.status === 'REDEEMED') return { label: 'Used', tone: 'neutral' };
+  if (t.status === 'CANCELLED') return { label: 'Cancelled', tone: 'failed' };
+  if (t.status === 'EXPIRED' || new Date(t.eventEndAt).getTime() < Date.now()) return { label: 'Expired', tone: 'neutral' };
+  return { label: 'Active', tone: 'success' };
+}
+
+/** My Tickets sections: upcoming and usable, already used, and cancelled or past. */
+export function ticketGroup(t: Pick<TicketRow, 'status' | 'eventEndAt'>): 'upcoming' | 'used' | 'inactive' {
+  if (t.status === 'REDEEMED') return 'used';
+  if (t.status === 'ACTIVE' && new Date(t.eventEndAt).getTime() >= Date.now()) return 'upcoming';
+  return 'inactive';
+}
+
+/** How far the on-chain redeem has got, for a ticket already admitted at the gate. */
+export function redeemLabel(status: ChainRecord['redeemStatus']): string | null {
+  switch (status) {
+    case 'CONFIRMED':
+      return 'Redeemed on-chain';
+    case 'PENDING':
+      return 'On-chain redeem pending';
+    case 'FAILED':
+      return 'On-chain redeem delayed, retrying';
+    default:
+      return null;
+  }
 }

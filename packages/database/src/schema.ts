@@ -470,6 +470,10 @@ export const ticketQrTokens = pgTable(
       .references(() => tickets.id),
     // SHA-256 of the random token. The raw token only ever exists in the QR.
     tokenHash: text().notNull().unique(),
+    // The owner the QR was issued to. If the ticket changes hands, older QR codes stop working.
+    ownerId: text()
+      .notNull()
+      .references(() => users.id),
     expiresAt: ts().notNull(),
     usedAt: ts(),
     createdAt: createdAt(),
@@ -493,7 +497,12 @@ export const ticketRedemptions = pgTable(
       .notNull()
       .references(() => events.id),
     method: redemptionMethodEnum().notNull(),
+    // The QR token that was scanned, when method is QR. Marked used in the same transaction.
+    qrTokenId: text().references(() => ticketQrTokens.id),
     chainStatus: redemptionChainStatusEnum().notNull().default('PENDING'),
+    chainError: text(),
+    // Last time the chain worker settled this row; the sweep waits a while before retrying a FAILED one.
+    chainUpdatedAt: ts(),
     redeemedAt: createdAt(),
   },
   (t) => [index('ticket_redemptions_event_idx').on(t.eventId, t.redeemedAt)],

@@ -1,11 +1,12 @@
 // Minting end-to-end against a real (local Hardhat) chain.
 // Covers: mint only after verified payment, no mint for unpaid or failed payments, one token per ticket
 // under repeated notifications, crash recovery from contract state, custodial ownership and the ticket API.
-import { blockchainTransactions, events, orders, ticketTiers, tickets, users } from '@ticketpay/database';
+import { blockchainTransactions, events, orders, ticketRedemptions, ticketTiers, tickets, users } from '@ticketpay/database';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ChainClient } from '../src/chain/chain.client';
 import { MintService } from '../src/chain/mint.service';
+import { RedeemService } from '../src/chain/redeem.service';
 import { PaymentsService } from '../src/payments/payments.service';
 import { startChainNode, type ChainNode } from './chain-node';
 import { bootTestApp, csrf, waitFor, type TestContext } from './helpers';
@@ -13,6 +14,7 @@ import { bootTestApp, csrf, waitFor, type TestContext } from './helpers';
 let ctx: TestContext;
 let node: ChainNode;
 let regular: { id: string; eventId: string };
+const GATE = 'gate@ticketpay.example';
 
 const SLUG = 'soundwave-festival-2026';
 const BUYER = 'buyer@ticketpay.example';
@@ -170,6 +172,58 @@ describe('Chain (local Hardhat)', () => {
     await ctx.db.update(tickets).set({ status: 'ACTIVE', mintStatus: 'MINTED', tokenId: t.tokenId }).where(eq(tickets.id, t.id));
   });
 
+  const admit = async (agent: Awaited<ReturnType<TestContext['login']>>, ticketId: string, action: 'validate' | 'redeem' = 'redeem') => {
+    const qr = (await agent.get(`/v1/tickets/${ticketId}/qr`)).body.qr;
+    return (await ctx.login(GATE)).post(`/v1/gate/${action}`).set(csrf).send({ eventId: regular.eventId, qr });
+  };
+  const redemptionOf = async (ticketId: string) => (await ctx.db.select().from(ticketRedemptions).where(eq(ticketRedemptions.ticketId, ticketId)))[0];
+  const onChainStatus = async (tokenId: string) => Number(await node.contract.getFunction('ticketStatus')(BigInt(tokenId)));
+
+  it('admits at the gate, then redeems the NFT on-chain and records the transaction', async () => {
+    const { payment, agent } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+
+    const v = await admit(agent, t.id, 'validate');
+    expect(v.body).toMatchObject({ outcome: 'VALID', chainOwner: 'MATCH', ticket: { tokenId: t.tokenId } });
+    expect((await admit(agent, t.id)).body.outcome).toBe('ADMITTED');
+
+    await waitFor(async () => ((await redemptionOf(t.id))?.chainStatus === 'CONFIRMED' ? true : null), 20_000, 'on-chain redeem');
+    expect(await onChainStatus(t.tokenId!)).toBe(2); // Redeemed
+    const [tx] = await ctx.db.select().from(blockchainTransactions).where(and(eq(blockchainTransactions.ticketId, t.id), eq(blockchainTransactions.type, 'REDEEM')));
+    expect(tx).toMatchObject({ status: 'CONFIRMED' });
+    expect(tx.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    const detail = await agent.get(`/v1/tickets/${t.id}`);
+    expect(detail.body.chain).toMatchObject({ redeemStatus: 'CONFIRMED', redeemTxHash: tx.txHash });
+    // Repeating is a no-op.
+    expect(await ctx.app.get(RedeemService).processRedeem(t.id)).toBe('already-confirmed');
+  });
+
+  it('an admission before the mint lands waits for the mint, then redeems', async () => {
+    const { payment, agent } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+    // Make the database believe the mint has not happened yet.
+    await ctx.db.update(tickets).set({ mintStatus: 'PENDING', tokenId: null }).where(eq(tickets.id, t.id));
+    expect((await admit(agent, t.id)).body.outcome).toBe('ADMITTED');
+    await waitFor(async () => ((await redemptionOf(t.id))?.chainStatus === 'CONFIRMED' ? true : null), 25_000, 'redeem after mint');
+    const [after] = await ticketsOf(payment.id);
+    expect(after).toMatchObject({ mintStatus: 'MINTED', tokenId: t.tokenId, status: 'REDEEMED' });
+    expect(await onChainStatus(t.tokenId!)).toBe(2);
+  });
+
+  it('recovers a redeem that reached the chain but was never recorded', async () => {
+    const { payment, agent } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+    await admit(agent, t.id);
+    await waitFor(async () => ((await redemptionOf(t.id))?.chainStatus === 'CONFIRMED' ? true : null), 20_000, 'on-chain redeem');
+    await ctx.db.update(ticketRedemptions).set({ chainStatus: 'PENDING' }).where(eq(ticketRedemptions.ticketId, t.id));
+    await ctx.db.update(blockchainTransactions).set({ status: 'FAILED' }).where(and(eq(blockchainTransactions.ticketId, t.id), eq(blockchainTransactions.type, 'REDEEM')));
+    expect(await ctx.app.get(RedeemService).processRedeem(t.id)).toBe('recovered');
+    expect((await redemptionOf(t.id)).chainStatus).toBe('CONFIRMED');
+  });
+
   // Keep last: it stops the chain node.
   it('a chain outage never undoes a paid order: tickets are issued and wait for the chain', async () => {
     await node.stop();
@@ -188,5 +242,15 @@ describe('Chain (local Hardhat)', () => {
     expect(await ctx.app.get(ChainClient).status()).toMatchObject({ ready: false });
     // Picked up again by the sweep once it has cooled down.
     expect(await ctx.app.get(MintService).ticketsToSweep(new Date(Date.now() + 11 * 60_000))).toContain(t.id);
+
+    // The gate still admits, and never claims the on-chain redeem happened.
+    expect((await admit(agent, t.id)).body.outcome).toBe('ADMITTED');
+    await new Promise((r) => setTimeout(r, 1500));
+    expect((await redemptionOf(t.id)).chainStatus).not.toBe('CONFIRMED');
+    const detail = await agent.get(`/v1/tickets/${t.id}`);
+    expect(detail.body.status).toBe('REDEEMED');
+    expect(detail.body.chain.redeemStatus).not.toBe('CONFIRMED');
+    expect(detail.body.chain.redeemTxHash).toBeNull();
+    expect(await ctx.app.get(RedeemService).redemptionsToSweep(new Date(Date.now() + 11 * 60_000))).toContain(t.id);
   });
 });

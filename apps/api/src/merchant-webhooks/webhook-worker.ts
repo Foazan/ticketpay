@@ -7,6 +7,7 @@ import { eq, sql } from 'drizzle-orm';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { DB, type Database } from '../db/db.module';
+import { GateService } from '../gate/gate.service';
 import { PaymentsService } from '../payments/payments.service';
 import { QUEUE_NAMES, Queues } from '../queue/queue.module';
 import { signWebhook } from './signing';
@@ -29,6 +30,7 @@ export class WebhookWorker implements OnModuleInit, OnApplicationShutdown {
     @Inject(ENV) private readonly env: Env,
     private readonly queues: Queues,
     private readonly payments: PaymentsService,
+    private readonly gate: GateService,
   ) {}
 
   onModuleInit() {
@@ -54,8 +56,9 @@ export class WebhookWorker implements OnModuleInit, OnApplicationShutdown {
   async maintenance() {
     const expiry = await this.payments.expireStale();
     const requeued = await this.payments.requeueStuckDeliveries();
+    const purgedQr = await this.gate.purgeExpiredQr();
     if (expiry.expired || expiry.paid || requeued) this.log.log(`Sweep: ${expiry.expired} expired, ${expiry.paid} paid on status check, ${requeued} webhooks requeued`);
-    return { ...expiry, requeued };
+    return { ...expiry, requeued, purgedQr };
   }
 
   /** One delivery attempt. Throws to ask BullMQ for a retry. */
