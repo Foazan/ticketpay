@@ -88,6 +88,27 @@ Password for all of them: `TicketPay123!` (local development only).
 
 Also seeded: `buyer2@`, `organizer2@`, `organizer3@` (approved merchants), `organizer4@` (merchant pending approval) and `gate2@`, all `@ticketpay.example`.
 
+## Opening TicketPay from another device
+
+The browser only ever talks to the web app's own address: `/v1` and `/media` are forwarded to the API (see `apps/web/next.config.mjs`). One address therefore serves everything, including the Midtrans notification URL. Keep `NEXT_PUBLIC_API_URL` empty in `.env` for this.
+
+**On the same Wi-Fi** (a phone, a teammate's laptop):
+
+1. Find the laptop's address with `ipconfig` (Windows, "IPv4 Address") or `ip addr`, for example `192.168.1.10`.
+2. Add it to `.env` as `DEV_ALLOWED_ORIGINS=192.168.1.10` and restart `pnpm dev`. Allow Node.js through the firewall for private networks when Windows asks.
+3. Open `http://192.168.1.10:3000` on the other device.
+
+Browsers allow the camera only on HTTPS, so over plain http the gate scanner uses the manual code.
+
+**From anywhere, with HTTPS** (camera scanning works, and Midtrans can reach you):
+
+1. Run `ngrok http 3000`, tunnelling the web port, not the API port.
+2. In `.env`, set `WEB_ORIGIN` and `API_PUBLIC_URL` to the `https://….ngrok-free.app` address, then restart `pnpm dev`.
+3. In the Midtrans dashboard, set the notification URL to `https://….ngrok-free.app/v1/webhooks/midtrans`.
+4. Use that address on every device, the laptop included. A session belongs to the address you logged in on.
+
+The free ngrok address changes on each restart; repeat steps 2 and 3 when it does.
+
 ## Tests
 
 ```bash

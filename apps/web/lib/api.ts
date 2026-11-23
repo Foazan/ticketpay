@@ -1,6 +1,14 @@
 import { CSRF_HEADER, CSRF_HEADER_VALUE } from '@ticketpay/shared';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/**
+ * Base URL the browser uses for the API. Empty (the default) means same-origin: requests go to
+ * /v1/... on this app, which forwards them to the API (see next.config.mjs). Set NEXT_PUBLIC_API_URL
+ * only to call the API on another origin directly.
+ */
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+
+/** Base URL for server-side calls from this app to the API. */
+const SERVER_API_URL = process.env.API_INTERNAL_URL || API_URL || 'http://localhost:4000';
 
 export class ApiError extends Error {
   constructor(
@@ -39,9 +47,23 @@ export async function apiFetch<T>(path: string, init: { method?: string; body?: 
 
 /** Server-side call from a server component. Forwards the visitor's cookies and never caches. */
 export async function serverFetch<T>(path: string, cookieHeader?: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${SERVER_API_URL}${path}`, {
     cache: 'no-store',
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   });
   return parse<T>(res);
+}
+
+/**
+ * Where to send the buyer to pay. The demo payment page lives in this app, so it is opened on the
+ * address the buyer is already using (a phone on the laptop's network, a tunnel), not on WEB_ORIGIN.
+ * A real provider's page (Midtrans Snap) is used as given.
+ */
+export function paymentPageHref(redirectUrl: string): string {
+  try {
+    const u = new URL(redirectUrl, 'http://placeholder');
+    return u.pathname.startsWith('/pay/mock/') ? u.pathname : redirectUrl;
+  } catch {
+    return redirectUrl;
+  }
 }

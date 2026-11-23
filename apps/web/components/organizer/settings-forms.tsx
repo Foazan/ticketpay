@@ -18,7 +18,7 @@ function Alert({ kind, children }: { kind: 'error' | 'ok'; children: React.React
 
 /** A secret shown exactly once, with a copy button. It is never retrievable again. */
 function OneTimeSecret({ label, value, notice }: { label: string; value: string; notice: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | 'manual'>(false);
   return (
     <div className="space-y-2 rounded-md border-2 border-status-warning bg-status-warning-soft p-4">
       <p className="text-label">{label}</p>
@@ -29,13 +29,15 @@ function OneTimeSecret({ label, value, notice }: { label: string; value: string;
           variant="secondary"
           className="px-3 py-2"
           onClick={async () => {
-            await navigator.clipboard.writeText(value).catch(() => undefined);
-            setCopied(true);
+            // The clipboard API only exists on HTTPS and localhost; elsewhere ask for a manual copy.
+            const ok = await navigator.clipboard?.writeText(value).then(() => true, () => false);
+            setCopied(ok ? true : 'manual');
           }}
         >
-          {copied ? 'Copied' : 'Copy'}
+          {copied === true ? 'Copied' : 'Copy'}
         </Button>
       </div>
+      {copied === 'manual' && <p className="text-caption">Copying is blocked on this connection. Select the text above and copy it yourself.</p>}
       <p className="text-caption">{notice}</p>
     </div>
   );

@@ -3,8 +3,9 @@
 import { formatRupiah, type OrderView, type PaymentMethod, type PaymentView } from '@ticketpay/shared';
 import clsx from 'clsx';
 import { useState, type FormEvent } from 'react';
-import { ApiError, apiFetch } from '@/lib/api';
+import { ApiError, apiFetch, paymentPageHref } from '@/lib/api';
 import { Button } from './ui';
+import { randomId } from '@/lib/random-id';
 
 type Method = { id: PaymentMethod; title: string; description: string };
 
@@ -16,8 +17,8 @@ export function CheckoutForm(props: {
   buyer: { name: string; email: string };
 }) {
   // Generated once per page load. A double click or a retry reuses them, so it creates one order and one payment.
-  const [checkoutKey] = useState(() => crypto.randomUUID());
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [checkoutKey] = useState(() => randomId());
+  const [idempotencyKey] = useState(() => randomId());
   const [method, setMethod] = useState<PaymentMethod | undefined>(props.methods[0]?.id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export function CheckoutForm(props: {
       });
       if (!payment.redirectUrl) throw new Error('The payment page is not available. Open your order to try again.');
       // The redirect back from the payment page is never treated as proof of payment; the status page asks the API.
-      window.location.href = payment.redirectUrl;
+      window.location.href = paymentPageHref(payment.redirectUrl);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.status === 502 ? 'The payment provider is unavailable right now. Try again in a moment.' : err.message);

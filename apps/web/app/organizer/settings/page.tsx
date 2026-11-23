@@ -77,7 +77,7 @@ export default async function Settings() {
               Developer help
             </h2>
             <p className="text-body-sm text-ink-secondary">Create a payment for one of your orders:</p>
-            <pre className="overflow-x-auto rounded-md bg-brand-navy p-3 text-caption text-ink-inverse">{`curl -X POST ${API_URL}/v1/payments \\
+            <pre className="overflow-x-auto rounded-md bg-brand-navy p-3 text-caption text-ink-inverse">{`curl -X POST ${API_URL || '<your TicketPay address>'}/v1/payments \\
   -H "Authorization: Bearer <api key>" \\
   -H "Idempotency-Key: <unique id>" \\
   -H "Content-Type: application/json" \\

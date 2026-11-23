@@ -4,7 +4,7 @@ import { formatRupiah, PAYMENT_METHOD_LABEL, type OrderView } from '@ticketpay/s
 import clsx from 'clsx';
 import { Check, Clock, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, paymentPageHref } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { Badge, ButtonLink } from './ui';
 
@@ -89,7 +89,7 @@ export function OrderStatusView({ initial }: { initial: OrderView }) {
         {p?.paidAt && <Row label="Paid at">{formatDateTime(p.paidAt)}</Row>}
       </dl>
       <div className="flex flex-wrap justify-center gap-3">
-        {order.status === 'PENDING' && p?.redirectUrl && <ButtonLink href={p.redirectUrl}>Continue payment</ButtonLink>}
+        {order.status === 'PENDING' && p?.redirectUrl && <ButtonLink href={paymentPageHref(p.redirectUrl)}>Continue payment</ButtonLink>}
         {order.status === 'PAID' && <ButtonLink href="/buyer/tickets">View my tickets</ButtonLink>}
         {(order.status === 'FAILED' || order.status === 'EXPIRED') && <ButtonLink href={`/events/${order.event.slug}`}>Start a new order</ButtonLink>}
         <ButtonLink href="/events" variant="ghost">Explore more events</ButtonLink>

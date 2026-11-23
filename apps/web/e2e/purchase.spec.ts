@@ -75,7 +75,7 @@ test('the payment status page cannot be faked from the URL', async ({ page }) =>
   // Skip the payment and jump to the status page with a provider-style "success" query string.
   const orderLink = await page.evaluate(async () => {
     const id = location.pathname.split('/').pop();
-    const res = await fetch(`http://localhost:4000/v1/payments/${id}`, { credentials: 'include' });
+    const res = await fetch(`/v1/payments/${id}`, { credentials: 'include' });
     return (await res.json()).orderId as string;
   });
   await page.goto(`/orders/${orderLink}/status?transaction_status=settlement&status_code=200`);

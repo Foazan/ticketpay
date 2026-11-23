@@ -8,6 +8,10 @@ import type { Env } from './config/env';
 /** Shared by main.ts and the tests so both run the same middleware. */
 export function configureApp(app: INestApplication): void {
   const env = app.get<Env>(ENV);
+  // In same-origin mode the web app forwards browser requests from this machine. Trusting only a
+  // loopback proxy lets rate limits see each visitor's address from X-Forwarded-For, while a header
+  // sent by anyone else is ignored.
+  (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set('trust proxy', 'loopback');
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({
