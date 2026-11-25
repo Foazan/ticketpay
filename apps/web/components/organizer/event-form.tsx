@@ -77,7 +77,7 @@ export function EventForm({ categories, event }: { categories: Category[]; event
   const aria = (name: string) => ({ 'aria-invalid': !!fieldErrors[name], 'aria-describedby': fieldErrors[name] ? `${name}-error` : undefined });
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-5">
+    <form method="post" onSubmit={submit} noValidate className="space-y-5">
       {error && (
         <p role="alert" className="rounded-md bg-status-danger-soft px-4 py-3 text-body-sm">
           {error}

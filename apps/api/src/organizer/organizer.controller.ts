@@ -160,7 +160,8 @@ export class OrganizerController {
         .where(and(eq(orders.merchantId, merchantId), eq(orders.status, 'PAID'))),
       this.db.select({ total: count() }).from(orders).where(and(eq(orders.merchantId, merchantId), eq(orders.status, 'PENDING'))),
       this.db
-        .select({ net: num(sql`coalesce(sum(${ledgerEntries.amount}), 0)`) })
+        // Credits minus debits: a refund's reversal line takes its net back out.
+        .select({ net: num(sql`coalesce(sum(case when ${ledgerEntries.direction} = 'CREDIT' then ${ledgerEntries.amount} else -${ledgerEntries.amount} end), 0)`) })
         .from(ledgerEntries)
         .where(and(eq(ledgerEntries.merchantId, merchantId), eq(ledgerEntries.type, 'MERCHANT_NET'))),
       this.db
@@ -323,7 +324,13 @@ export class OrganizerController {
         .orderBy(asc(events.startAt), asc(ticketTiers.tierCode)),
       this.dailySales(merchantId, days),
       this.db
-        .select({ type: ledgerEntries.type, amount: num(sql`coalesce(sum(${ledgerEntries.amount}), 0)`) })
+        // Each type in its natural direction (fees and refunds are debits), net of any reversal.
+        .select({
+          type: ledgerEntries.type,
+          amount: num(
+            sql`coalesce(sum(case when (${ledgerEntries.type} in ('SERVICE_FEE', 'REFUND', 'PROVIDER_FEE')) = (${ledgerEntries.direction} = 'DEBIT') then ${ledgerEntries.amount} else -${ledgerEntries.amount} end), 0)`,
+          ),
+        })
         .from(ledgerEntries)
         .where(eq(ledgerEntries.merchantId, merchantId))
         .groupBy(ledgerEntries.type),
@@ -340,7 +347,14 @@ export class OrganizerController {
       daily,
       paymentMethods: methods.map((m) => ({ ...m, count: Number(m.count) })),
       // The provider fee is unknown in the sandbox and is not deducted; organizer net is an estimate.
-      feeBreakdown: { gross: fee.GROSS_SALE ?? 0, serviceFee: fee.SERVICE_FEE ?? 0, providerFee: fee.PROVIDER_FEE ?? null, organizerNet: fee.MERCHANT_NET ?? 0 },
+      // gross - refunds = serviceFee + organizerNet holds for every combination of paid and refunded payments.
+      feeBreakdown: {
+        gross: fee.GROSS_SALE ?? 0,
+        refunds: fee.REFUND ?? 0,
+        serviceFee: fee.SERVICE_FEE ?? 0,
+        providerFee: fee.PROVIDER_FEE ?? null,
+        organizerNet: fee.MERCHANT_NET ?? 0,
+      },
     };
   }
 

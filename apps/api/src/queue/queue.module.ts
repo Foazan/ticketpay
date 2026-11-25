@@ -24,10 +24,6 @@ export class Queues implements OnApplicationShutdown {
     this.chain = new Queue(QUEUE_NAMES.chain, { connection });
   }
 
-  /**
-   * Queues the on-chain mint for an issued ticket. Only called for tickets of a backend-verified PAID payment.
-   * The job id is derived from the ticket id, so a ticket is never queued twice at the same time.
-   */
   /** Queues the on-chain redeem for a ticket admitted at the gate. Runs after its mint, on the same queue. */
   async enqueueRedeem(ticketId: string): Promise<void> {
     if (this.env.CHAIN_MODE === 'disabled') return;
@@ -49,6 +45,30 @@ export class Queues implements OnApplicationShutdown {
     }
   }
 
+  /** Queues cancel(tokenId) for a refunded ticket's NFT. Same queue as minting, so it runs after the mint. */
+  async enqueueCancel(ticketId: string): Promise<void> {
+    if (this.env.CHAIN_MODE === 'disabled') return;
+    try {
+      await this.chain.add(
+        'cancel',
+        { ticketId },
+        {
+          jobId: `cancel-${ticketId}`,
+          attempts: this.env.MINT_MAX_ATTEMPTS + 2,
+          backoff: { type: 'exponential', delay: this.env.MINT_RETRY_BASE_MS },
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+    } catch (err) {
+      this.log.error(`Could not enqueue cancel for ticket ${ticketId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Queues the on-chain mint for an issued ticket. Only called for tickets of a backend-verified PAID payment.
+   * The job id is derived from the ticket id, so a ticket is never queued twice at the same time.
+   */
   async enqueueMint(ticketId: string): Promise<void> {
     if (this.env.CHAIN_MODE === 'disabled') return;
     try {

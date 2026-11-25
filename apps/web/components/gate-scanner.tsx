@@ -167,7 +167,7 @@ export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { event
           {camera.state === 'on' ? 'Hold the ticket QR inside the frame. It is checked automatically.' : 'Ask the holder to read out the code under their QR.'}
         </p>
 
-        <form onSubmit={submitCode} className="card space-y-3 p-4">
+        <form method="post" onSubmit={submitCode} className="card space-y-3 p-4">
           <label htmlFor="manual-code" className="text-label">
             Manual code
           </label>

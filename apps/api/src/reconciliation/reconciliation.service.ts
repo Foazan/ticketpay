@@ -1,9 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { events, ledgerEntries, orderItems, orders, paymentWebhookEvents, payments, ticketRedemptions, tickets } from '@ticketpay/database';
+import { blockchainTransactions, events, ledgerEntries, orderItems, orders, paymentWebhookEvents, payments, ticketRedemptions, tickets } from '@ticketpay/database';
 import type { ReconStatus } from '@ticketpay/shared';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { ChainClient } from '../chain/chain.client';
 import { DB, type Database } from '../db/db.module';
+
+/** Written out: Drizzle leaves columns unqualified in single-table selects, and "id" would bind to bt.id. */
+const TICKET_ID = sql.raw('"tickets"."id"');
 
 /** Midtrans statuses that mean the money was collected. The mock provider reports the same words. */
 const PROVIDER_SUCCESS = new Set(['settlement', 'capture']);
@@ -20,8 +23,9 @@ export interface ReconRow {
   providerStatus: string | null;
   paymentStatus: string;
   orderStatus: string;
-  ledger: { gross: number | null; serviceFee: number | null; merchantNet: number | null };
-  tickets: { expected: number; issued: number; minted: number; failed: number; pending: number };
+  /** Net of each type: a refund's reversal lines bring the fee and organizer net back to zero. */
+  ledger: { gross: number | null; serviceFee: number | null; merchantNet: number | null; refund: number | null };
+  tickets: { expected: number; issued: number; minted: number; failed: number; pending: number; cancelledOnChain: number; cancelFailed: number; refundedMinted: number };
   duplicateNotifications: number;
   status: ReconStatus;
   /** Why the row is not MATCHED, or notes on a matched row. Plain language for the dashboard. */
@@ -72,9 +76,14 @@ export class ReconciliationService {
     const orderIds = base.map((b) => b.orderId);
     const [ledger, quantities, ticketStats, duplicates, redeemFailures] = await Promise.all([
       this.db
-        .select({ paymentId: ledgerEntries.paymentId, type: ledgerEntries.type, amount: sql<number>`sum(${ledgerEntries.amount})`.mapWith(Number) })
+        .select({
+          paymentId: ledgerEntries.paymentId,
+          type: ledgerEntries.type,
+          // Signed in the type's natural direction: fee taken is a DEBIT, gross and organizer net are CREDITs.
+          amount: sql<number>`sum(case when (${ledgerEntries.type} = 'SERVICE_FEE' or ${ledgerEntries.type} = 'REFUND') = (${ledgerEntries.direction} = 'DEBIT') then ${ledgerEntries.amount} else -${ledgerEntries.amount} end)`.mapWith(Number),
+        })
         .from(ledgerEntries)
-        .where(and(inArray(ledgerEntries.paymentId, paymentIds), inArray(ledgerEntries.type, ['GROSS_SALE', 'SERVICE_FEE', 'MERCHANT_NET'])))
+        .where(and(inArray(ledgerEntries.paymentId, paymentIds), inArray(ledgerEntries.type, ['GROSS_SALE', 'SERVICE_FEE', 'MERCHANT_NET', 'REFUND'])))
         .groupBy(ledgerEntries.paymentId, ledgerEntries.type),
       this.db
         .select({ orderId: orderItems.orderId, qty: sql<number>`sum(${orderItems.quantity})`.mapWith(Number) })
@@ -87,7 +96,10 @@ export class ReconciliationService {
           issued: sql<number>`count(*) filter (where ${tickets.status} <> 'CANCELLED')`.mapWith(Number),
           minted: sql<number>`count(*) filter (where ${tickets.mintStatus} = 'MINTED')`.mapWith(Number),
           failed: sql<number>`count(*) filter (where ${tickets.mintStatus} = 'FAILED')`.mapWith(Number),
-          pending: sql<number>`count(*) filter (where ${tickets.mintStatus} in ('PENDING', 'SUBMITTED'))`.mapWith(Number),
+          pending: sql<number>`count(*) filter (where ${tickets.mintStatus} in ('PENDING', 'SUBMITTED') and ${tickets.status} <> 'CANCELLED')`.mapWith(Number),
+          refundedMinted: sql<number>`count(*) filter (where ${tickets.status} = 'CANCELLED' and ${tickets.mintStatus} = 'MINTED')`.mapWith(Number),
+          cancelledOnChain: sql<number>`count(*) filter (where exists (select 1 from ${blockchainTransactions} bt where bt.ticket_id = ${TICKET_ID} and bt.type = 'CANCEL' and bt.status = 'CONFIRMED'))`.mapWith(Number),
+          cancelFailed: sql<number>`count(*) filter (where ${tickets.status} = 'CANCELLED' and exists (select 1 from ${blockchainTransactions} bt where bt.ticket_id = ${TICKET_ID} and bt.type = 'CANCEL' and bt.status = 'FAILED') and not exists (select 1 from ${blockchainTransactions} bt where bt.ticket_id = ${TICKET_ID} and bt.type = 'CANCEL' and bt.status = 'CONFIRMED'))`.mapWith(Number),
         })
         .from(tickets)
         .where(inArray(tickets.paymentId, paymentIds))
@@ -114,7 +126,7 @@ export class ReconciliationService {
 
     const rows = base.map((b): ReconRow => {
       const l = ledgerBy.get(b.paymentId) ?? {};
-      const t = ticketsBy.get(b.paymentId) ?? { issued: 0, minted: 0, failed: 0, pending: 0 };
+      const t = ticketsBy.get(b.paymentId) ?? { issued: 0, minted: 0, failed: 0, pending: 0, refundedMinted: 0, cancelledOnChain: 0, cancelFailed: 0 };
       const row: ReconRow = {
         paymentId: b.paymentId,
         reference: b.reference,
@@ -125,8 +137,17 @@ export class ReconciliationService {
         providerStatus: b.providerStatus,
         paymentStatus: b.paymentStatus,
         orderStatus: b.orderStatus,
-        ledger: { gross: l.GROSS_SALE ?? null, serviceFee: l.SERVICE_FEE ?? null, merchantNet: l.MERCHANT_NET ?? null },
-        tickets: { expected: qtyBy.get(b.orderId) ?? 0, issued: t.issued, minted: t.minted, failed: t.failed, pending: t.pending },
+        ledger: { gross: l.GROSS_SALE ?? null, serviceFee: l.SERVICE_FEE ?? null, merchantNet: l.MERCHANT_NET ?? null, refund: l.REFUND ?? null },
+        tickets: {
+          expected: qtyBy.get(b.orderId) ?? 0,
+          issued: t.issued,
+          minted: t.minted,
+          failed: t.failed,
+          pending: t.pending,
+          cancelledOnChain: t.cancelledOnChain,
+          cancelFailed: t.cancelFailed,
+          refundedMinted: t.refundedMinted,
+        },
         duplicateNotifications: dupBy.get(b.paymentId) ?? 0,
         status: 'MATCHED',
         findings: [],
@@ -167,7 +188,18 @@ export class ReconciliationService {
       flag('MISMATCH', `Ledger entries exist but the payment is ${row.paymentStatus}`);
     }
     if (!paid && !refunded && row.tickets.issued > 0) flag('MISMATCH', `Tickets were issued but the payment is ${row.paymentStatus}`);
-    if (!paid && row.tickets.minted > 0) flag('INVESTIGATE', `${row.tickets.minted} tickets are minted but the payment is ${row.paymentStatus}`);
+    const activeMinted = row.tickets.minted - row.tickets.refundedMinted;
+    if (!paid && activeMinted > 0 && !(refunded && row.tickets.issued === 0)) flag('INVESTIGATE', `${activeMinted} tickets are minted and still active but the payment is ${row.paymentStatus}`);
+
+    if (row.paymentStatus === 'REFUNDED') {
+      if (row.ledger.refund !== row.amount) flag('MISMATCH', 'Refunded, but the refund ledger line does not equal the amount paid');
+      if ((row.ledger.serviceFee ?? 0) !== 0 || (row.ledger.merchantNet ?? 0) !== 0) flag('MISMATCH', 'Refunded, but the service fee and organizer net were not fully reversed');
+      if (this.chain.config.enabled && row.tickets.refundedMinted > row.tickets.cancelledOnChain) {
+        const waiting = row.tickets.refundedMinted - row.tickets.cancelledOnChain;
+        if (row.tickets.cancelFailed > 0) flag('INVESTIGATE', `${row.tickets.cancelFailed} refunded tickets could not be cancelled on-chain; see Blockchain monitoring`);
+        else flag('PENDING', `${waiting} refunded tickets are being cancelled on-chain`);
+      }
+    }
 
     if (paid && this.chain.config.enabled && row.tickets.issued > 0) {
       if (row.tickets.failed > 0) flag('INVESTIGATE', `${row.tickets.failed} mints failed; they are retried automatically`);

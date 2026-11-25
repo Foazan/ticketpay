@@ -76,7 +76,7 @@ export function OrganizerRegisterForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="card mx-auto w-full max-w-2xl space-y-8 p-8 shadow-card">
+    <form method="post" onSubmit={onSubmit} noValidate className="card mx-auto w-full max-w-2xl space-y-8 p-8 shadow-card">
       <div className="space-y-2">
         <h1 className="text-h2">Register as an organizer</h1>
         <p className="text-body-sm text-ink-secondary">

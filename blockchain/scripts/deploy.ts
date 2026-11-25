@@ -37,6 +37,16 @@ async function main() {
     console.log(`Granted ${role} to signer ${signerAddress}`);
   }
 
+  // cancel(), used when a ticket is refunded, needs the admin role. On a local chain the signer gets it
+  // straight away; on Sepolia that is a deliberate operator step (pnpm chain:grant-admin:sepolia).
+  if (network.name === 'localhost' || network.name === 'hardhat') {
+    const admin = await contract.DEFAULT_ADMIN_ROLE();
+    if (!(await contract.hasRole(admin, signerAddress))) {
+      await (await contract.grantRole(admin, signerAddress)).wait();
+      console.log(`Granted DEFAULT_ADMIN_ROLE to signer ${signerAddress} (local chain only)`);
+    }
+  }
+
   const record = {
     network: network.name,
     chainId: Number(chainId),

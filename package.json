@@ -27,6 +27,8 @@
     "chain:deploy:local": "pnpm --filter @ticketpay/contracts deploy:local",
     "chain:check:sepolia": "pnpm --filter @ticketpay/contracts check:sepolia",
     "chain:fund-signer": "pnpm --filter @ticketpay/contracts fund-signer:sepolia",
+    "chain:grant-admin:sepolia": "pnpm --filter @ticketpay/contracts grant-admin:sepolia",
+    "chain:grant-admin:local": "pnpm --filter @ticketpay/contracts grant-admin:local",
     "chain:deploy:sepolia": "pnpm --filter @ticketpay/contracts deploy:sepolia",
     "chain:verify:sepolia": "pnpm --filter @ticketpay/contracts verify:sepolia",
     "build:packages": "pnpm --filter @ticketpay/shared build && pnpm --filter @ticketpay/database build",

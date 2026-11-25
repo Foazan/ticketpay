@@ -5,6 +5,7 @@ import { Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatDateTime } from '@/lib/format';
+import { useHydrated } from '@/lib/use-hydrated';
 import { Button } from './ui';
 
 const MAX_PER_ORDER = MAX_TICKETS_PER_ORDER;
@@ -12,6 +13,7 @@ const MAX_PER_ORDER = MAX_TICKETS_PER_ORDER;
 export function TierSelector({ eventSlug, tiers }: { eventSlug: string; tiers: TicketTierView[] }) {
   const router = useRouter();
   const [qty, setQty] = useState<Record<string, number>>({});
+  const hydrated = useHydrated();
   const totalQty = Object.values(qty).reduce((a, b) => a + b, 0);
   const subtotal = tiers.reduce((sum, t) => sum + (qty[t.id] ?? 0) * t.price, 0);
   const set = (id: string, n: number) => setQty((q) => ({ ...q, [id]: n }));
@@ -22,7 +24,7 @@ export function TierSelector({ eventSlug, tiers }: { eventSlug: string; tiers: T
       <h2 className="text-h3">Select tickets</h2>
       {tiers.map((t) => {
         const n = qty[t.id] ?? 0;
-        const canAdd = t.onSale && n < Math.min(t.available, MAX_PER_ORDER) && totalQty < MAX_PER_ORDER;
+        const canAdd = hydrated && t.onSale && n < Math.min(t.available, MAX_PER_ORDER) && totalQty < MAX_PER_ORDER;
         return (
           <div key={t.id} className="flex items-center justify-between rounded-md border border-line p-4">
             <div className="space-y-1">

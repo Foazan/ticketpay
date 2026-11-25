@@ -43,6 +43,6 @@ export function providerFactory(env: Env) {
     WebhookWorker,
     { provide: PAYMENT_PROVIDER, inject: [ENV], useFactory: providerFactory },
   ],
-  exports: [PaymentsService, WebhookWorker],
+  exports: [PaymentsService, FeesService, WebhookWorker],
 })
 export class PaymentsModule {}

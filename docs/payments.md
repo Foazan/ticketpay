@@ -112,7 +112,7 @@ The `signature_key` is checked as SHA512(order_id + status_code + gross_amount +
 
 ## Merchant webhooks
 
-Events: `payment.paid`, `payment.failed`, `payment.expired`. One delivery per payment and event type.
+Events: `payment.paid`, `payment.failed`, `payment.expired`, and `payment.refunded` (sent after a simulated refund by an administrator; `data.status` is `REFUNDED`, and the order's tickets are cancelled). One delivery per payment and event type.
 
 ```http
 POST https://merchant.example/webhooks/ticketpay

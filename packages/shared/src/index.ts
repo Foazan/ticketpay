@@ -229,7 +229,7 @@ export function computeServiceFee(subtotal: number, feeRateBps: number): number 
 
 // ---------- Outbound merchant webhooks ----------
 
-export const WEBHOOK_EVENT_TYPES = ['payment.paid', 'payment.failed', 'payment.expired'] as const;
+export const WEBHOOK_EVENT_TYPES = ['payment.paid', 'payment.failed', 'payment.expired', 'payment.refunded'] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 export const WEBHOOK_HEADERS = {
   eventId: 'x-ticketpay-event-id',
@@ -377,3 +377,33 @@ export const POSTER_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 /** Reconciliation result for one payment (section 6.6). */
 export const RECON_STATUSES = ['MATCHED', 'PENDING', 'MISMATCH', 'INVESTIGATE'] as const;
 export type ReconStatus = (typeof RECON_STATUSES)[number];
+
+// ---------- Admin ----------
+
+export const merchantDecisionSchema = z.object({
+  // Shown to the organizer. Required when rejecting or suspending.
+  reason: z.string().trim().max(500).optional().default(''),
+});
+export type MerchantDecisionInput = z.infer<typeof merchantDecisionSchema>;
+
+/** At most 10%: a prototype guard against a typo charging buyers a fortune. */
+export const MAX_FEE_BPS = 1000;
+export const feeSettingSchema = z.object({
+  feeRateBps: z.coerce.number().int().min(0).max(MAX_FEE_BPS, 'The service fee cannot exceed 10%'),
+  note: z.string().trim().max(300).optional().default(''),
+});
+export type FeeSettingInput = z.infer<typeof feeSettingSchema>;
+
+export const refundSchema = z.object({
+  reason: z.string().trim().min(5, 'Give a short reason for the refund').max(500),
+});
+export type RefundInput = z.infer<typeof refundSchema>;
+
+export const createGateStaffSchema = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(8, 'At least 8 characters').max(128),
+});
+export type CreateGateStaffInput = z.infer<typeof createGateStaffSchema>;
+
+export const gateAssignmentSchema = z.object({ eventId: z.string().trim().min(1).max(64) });

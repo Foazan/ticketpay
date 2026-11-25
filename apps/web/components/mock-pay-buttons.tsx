@@ -4,10 +4,12 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
 import { Button } from './ui';
+import { useHydrated } from '@/lib/use-hydrated';
 
 export function MockPayButtons({ paymentId, orderId, disabled }: { paymentId: string; orderId: string; disabled: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
   const run = async (outcome: 'paid' | 'failed' | 'expired') => {
     setBusy(outcome);
@@ -29,10 +31,10 @@ export function MockPayButtons({ paymentId, orderId, disabled }: { paymentId: st
   }
   return (
     <div className="space-y-3">
-      <Button variant="accent" className="w-full" disabled={!!busy} onClick={() => run('paid')}>{busy === 'paid' ? 'Paying…' : 'Simulate successful payment'}</Button>
+      <Button variant="accent" className="w-full" disabled={!!busy || !hydrated} onClick={() => run('paid')}>{busy === 'paid' ? 'Paying…' : 'Simulate successful payment'}</Button>
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" disabled={!!busy} onClick={() => run('failed')}>Simulate failure</Button>
-        <Button variant="secondary" disabled={!!busy} onClick={() => run('expired')}>Simulate expiry</Button>
+        <Button variant="secondary" disabled={!!busy || !hydrated} onClick={() => run('failed')}>Simulate failure</Button>
+        <Button variant="secondary" disabled={!!busy || !hydrated} onClick={() => run('expired')}>Simulate expiry</Button>
       </div>
       {error && <p role="alert" className="text-body-sm text-status-danger">{error}</p>}
     </div>

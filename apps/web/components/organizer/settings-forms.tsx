@@ -90,7 +90,7 @@ export function ProfileForm({ profile }: { profile: MerchantProfile }) {
   );
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4">
+    <form method="post" onSubmit={submit} noValidate className="space-y-4">
       {error && <Alert kind="error">{error}</Alert>}
       {saved && <Alert kind="ok">Profile saved.</Alert>}
       <dl className="grid gap-4 text-body-sm sm:grid-cols-2">
@@ -160,7 +160,7 @@ export function WebhookForm({ url, hasSecret }: { url: string | null; hasSecret:
 
   return (
     <div className="space-y-4">
-      <form onSubmit={save} className="space-y-3">
+      <form method="post" onSubmit={save} className="space-y-3">
         {error && <Alert kind="error">{error}</Alert>}
         {saved && !secret && <Alert kind="ok">Webhook URL saved.</Alert>}
         <div>

@@ -14,7 +14,9 @@
     "verify:sepolia": "hardhat compile --force --quiet && hardhat run scripts/verify.ts --network sepolia",
     "typecheck": "hardhat compile --quiet && tsc --noEmit",
     "check:sepolia": "hardhat run scripts/check.ts --network sepolia",
-    "fund-signer:sepolia": "hardhat run scripts/fund-signer.ts --network sepolia"
+    "fund-signer:sepolia": "hardhat run scripts/fund-signer.ts --network sepolia",
+    "grant-admin:sepolia": "hardhat run scripts/grant-admin.ts --network sepolia",
+    "grant-admin:local": "hardhat run scripts/grant-admin.ts --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",

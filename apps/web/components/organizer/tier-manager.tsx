@@ -66,7 +66,7 @@ function TierForm({ event, tier, onDone }: { event: OrganizerEvent; tier?: Tier;
   );
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4 rounded-md border border-line bg-bg-page p-4">
+    <form method="post" onSubmit={submit} noValidate className="space-y-4 rounded-md border border-line bg-bg-page p-4">
       {error && (
         <p role="alert" className="rounded-md bg-status-danger-soft px-4 py-3 text-body-sm">
           {error}

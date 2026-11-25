@@ -6,6 +6,7 @@ import { useState, type FormEvent } from 'react';
 import { ApiError, apiFetch, paymentPageHref } from '@/lib/api';
 import { Button } from './ui';
 import { randomId } from '@/lib/random-id';
+import { useHydrated } from '@/lib/use-hydrated';
 
 type Method = { id: PaymentMethod; title: string; description: string };
 
@@ -21,6 +22,7 @@ export function CheckoutForm(props: {
   const [idempotencyKey] = useState(() => randomId());
   const [method, setMethod] = useState<PaymentMethod | undefined>(props.methods[0]?.id);
   const [busy, setBusy] = useState(false);
+  const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -71,7 +73,7 @@ export function CheckoutForm(props: {
   );
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6" noValidate>
+    <form method="post" onSubmit={onSubmit} className="space-y-6" noValidate>
       <section className="card space-y-4 p-6">
         <h2 className="text-h3">Buyer details</h2>
         <p className="text-body-sm text-ink-secondary">Tickets are issued to your account. The name is shown to gate staff if the event checks ID.</p>
@@ -93,7 +95,7 @@ export function CheckoutForm(props: {
               method === m.id ? 'border-accent-teal bg-accent-teal-soft' : 'border-line bg-bg-surface',
             )}
           >
-            <input type="radio" name="method" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} className="h-4 w-4 accent-[#0E9AA0]" />
+            <input type="radio" name="method" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} disabled={!hydrated} className="h-4 w-4 accent-[#0E9AA0]" />
             <span>
               <span className="block text-label">{m.title}</span>
               <span className="block text-caption text-ink-secondary">{m.description}</span>
@@ -108,7 +110,7 @@ export function CheckoutForm(props: {
           {error}
         </p>
       )}
-      <Button type="submit" disabled={busy || !method} className="w-full">
+      <Button type="submit" disabled={busy || !method || !hydrated} className="w-full">
         {busy ? 'Preparing payment…' : `Pay ${formatRupiah(props.total)}`}
       </Button>
     </form>

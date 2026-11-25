@@ -2,10 +2,10 @@
 
 import { ROLE_HOME, type SessionUser } from '@ticketpay/shared';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
 import { Button } from './ui';
+import { useHydrated } from '@/lib/use-hydrated';
 
 type Field = { name: string; label: string; type?: string; placeholder?: string; autoComplete?: string };
 
@@ -23,8 +23,8 @@ const FIELDS: Record<'login' | 'register', Field[]> = {
 };
 
 export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next?: string }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -37,10 +37,14 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next?: st
     if (!data.phone) delete data.phone;
     try {
       const { user } = await apiFetch<{ user: SessionUser }>(`/v1/auth/${mode}`, { method: 'POST', body: data });
-      // Only follow a same-site path, and only buyers go back to where they came from.
+      // Only follow a same-site path. Buyers go back to where they came from; other roles only
+      // within their own area (an administrator's link to /admin/payments, say).
       const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
-      router.push(user.role === 'BUYER' && safeNext ? safeNext : ROLE_HOME[user.role]);
-      router.refresh();
+      const home = ROLE_HOME[user.role];
+      const allowed = safeNext && (user.role === 'BUYER' || safeNext === home || safeNext.startsWith(`${home}/`));
+      // A full page load, so the header and every server component see the new session at once.
+      // (router.push followed by router.refresh raced: a click on the next page could be lost.)
+      window.location.assign(allowed ? safeNext : home);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.status === 429 ? 'Too many attempts. Wait a minute and try again.' : err.message);
@@ -53,7 +57,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next?: st
   }
 
   return (
-    <form onSubmit={onSubmit} className="card mx-auto flex w-full max-w-md flex-col gap-6 p-8 shadow-card" noValidate>
+    <form method="post" onSubmit={onSubmit} className="card mx-auto flex w-full max-w-md flex-col gap-6 p-8 shadow-card" noValidate>
       <div className="space-y-2">
         <h1 className="text-h2">{mode === 'login' ? 'Log in to TicketPay' : 'Create your account'}</h1>
         <p className="text-body-sm text-ink-secondary">
@@ -72,7 +76,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next?: st
           {fieldErrors[f.name] && <p className="mt-2 text-caption text-status-danger">{fieldErrors[f.name]}</p>}
         </div>
       ))}
-      <Button type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}</Button>
+      <Button type="submit" disabled={busy || !hydrated}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}</Button>
       <div className="flex flex-col gap-2 text-body-sm text-ink-accent">
         {mode === 'login' ? (
           <>

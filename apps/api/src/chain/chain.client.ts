@@ -135,6 +135,17 @@ export class ChainClient implements OnApplicationShutdown {
     return this.send(() => this.ticket().getFunction('mintTicket')(to, eventId, tier, paymentRef) as Promise<TransactionResponse>);
   }
 
+  sendCancel(tokenId: bigint): Promise<TransactionResponse> {
+    return this.send(() => this.ticket().getFunction('cancel')(tokenId) as Promise<TransactionResponse>);
+  }
+
+  /** Whether the signer holds the contract's admin role, which cancel() requires. */
+  async signerIsAdmin(): Promise<boolean> {
+    const c = this.ticket();
+    const role = (await c.getFunction('DEFAULT_ADMIN_ROLE')()) as string;
+    return (await c.getFunction('hasRole')(role, this.signer())) as boolean;
+  }
+
   sendRedeem(tokenId: bigint): Promise<TransactionResponse> {
     return this.send(() => this.ticket().getFunction('redeem')(tokenId) as Promise<TransactionResponse>);
   }

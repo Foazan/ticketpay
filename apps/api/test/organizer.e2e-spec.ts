@@ -283,7 +283,7 @@ describe('reporting', () => {
     const revenueByTier = an.body.byTier.reduce((s: number, t: { revenue: number }) => s + t.revenue, 0);
     expect(revenueByTier).toBe(ov.body.totalRevenue);
     const fees = an.body.feeBreakdown;
-    expect(fees.serviceFee + fees.organizerNet).toBe(fees.gross);
+    expect(fees.serviceFee + fees.organizerNet).toBe(fees.gross - fees.refunds);
     expect(fees.organizerNet).toBe(ov.body.estimatedBalance);
     // Today (WIB) is the last bucket, and everything paid in this run lands in it.
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());

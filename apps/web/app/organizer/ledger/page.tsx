@@ -20,15 +20,19 @@ const TYPE: Record<string, string> = {
 
 export default async function Ledger() {
   const rows = await serverFetch<LedgerEntry[]>('/v1/organizer/ledger', await cookieHeader());
-  const sum = (type: string) => rows.filter((r) => r.type === type).reduce((s, r) => s + (r.direction === 'CREDIT' ? r.amount : r.amount), 0);
+  // Net per type in its natural direction: fees and refunds count as debits, reversals subtract.
+  const debitTypes = new Set(['SERVICE_FEE', 'REFUND', 'PROVIDER_FEE']);
+  const sum = (type: string) =>
+    rows.filter((r) => r.type === type).reduce((s, r) => s + ((r.direction === 'DEBIT') === debitTypes.has(type) ? r.amount : -r.amount), 0);
   return (
     <>
       <PageHeader
         title="Ledger"
         intro="An append-only record of every money movement on your payments. Entries are never edited; a correction is a new adjustment line. Balances here are internal estimates from sandbox payments, not settled funds."
       />
-      <dl className="grid gap-4 sm:grid-cols-3">
+      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Gross sales" value={formatRupiah(sum('GROSS_SALE'))} />
+        <Stat label="Refunds" value={formatRupiah(sum('REFUND'))} note="Simulated in this prototype" />
         <Stat label="Service fees" value={formatRupiah(sum('SERVICE_FEE'))} />
         <Stat label="Organizer net (estimate)" value={formatRupiah(sum('MERCHANT_NET'))} />
       </dl>

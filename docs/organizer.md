@@ -28,7 +28,7 @@ The publish check reads the merchant status fresh from the database, so approval
 | Create event / Manage event | Details form, ticket categories, status actions, poster |
 | Transactions | One row per order (section 6.4), filterable by status and event: order number, payment reference, buyer, event and ticket types, amount including fee, provider status beside TicketPay's status, tickets issued and minted, date |
 | Sales analytics | Tickets per day (7, 30 or 90 days), fee breakdown, sales by ticket category, paid amount by payment method |
-| Ledger | Totals and the append-only entries with credit and debit |
+| Ledger | Totals (gross, service fee, organizer net and simulated refunds, each net of reversals) and the append-only entries with credit and debit |
 | Reconciliation | Per-payment comparison of provider, ledger and chain (below) |
 | Merchant settings | Profile, API keys, webhook, integration status, developer help |
 
@@ -107,3 +107,7 @@ Duplicate provider notifications are listed as a note, not a mismatch: providers
 - `apps/web/e2e/organizer.spec.ts`:
   - registration of a new organizer, who cannot publish until approved;
   - an approved organizer creating, pricing and publishing an event that then appears in the marketplace.
+
+## Refunds
+
+Only a TicketPay administrator can refund, and the refund is simulated (see [admin.md](admin.md)). The organizer sees its effects: the order and payment show as refunded, the tickets are cancelled and the quota returns to sale, the ledger gains a refund line and reversals of the fee and net lines (the estimated balance goes down by the ticket subtotal), and a `payment.refunded` webhook is sent if a webhook URL is set.

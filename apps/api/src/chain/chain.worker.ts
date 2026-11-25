@@ -4,6 +4,7 @@ import type IORedis from 'ioredis';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env';
 import { QUEUE_NAMES, Queues } from '../queue/queue.module';
+import { CancelService, NeedsOperatorError } from './cancel.service';
 import { ChainClient } from './chain.client';
 import { MintService } from './mint.service';
 import { RedeemService } from './redeem.service';
@@ -24,6 +25,7 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly chain: ChainClient,
     private readonly mints: MintService,
     private readonly redeems: RedeemService,
+    private readonly cancels: CancelService,
   ) {}
 
   onModuleInit() {
@@ -32,7 +34,10 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     this.worker = new Worker(QUEUE_NAMES.chain, (job: Job) => this.handle(job), { connection: this.connection, concurrency: 1 });
     this.worker.on('error', (err) => this.log.error(`Worker error: ${err.message}`));
     this.worker.on('failed', (job, err) => {
-      if (!job || (job.name !== 'mint' && job.name !== 'redeem')) return;
+      if (!job || (job.name !== 'mint' && job.name !== 'redeem')) {
+        if (job?.name === 'cancel') this.log.warn(`Cancel for ticket ${job.data.ticketId} failed (attempt ${job.attemptsMade}): ${this.chain.errorText(err)}`);
+        return;
+      }
       const final = job.attemptsMade >= (job.opts.attempts ?? 1);
       const reason = this.chain.errorText(err);
       this.log.warn(`${job.name === 'mint' ? 'Mint' : 'Redeem'} for ticket ${job.data.ticketId} failed (attempt ${job.attemptsMade}${final ? ', will retry in the sweep' : ''}): ${reason}`);
@@ -48,6 +53,15 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
   async handle(job: Job): Promise<unknown> {
     if (job.name === 'sweep') return this.sweep();
     if (job.name === 'redeem') return this.redeems.processRedeem(job.data.ticketId as string);
+    if (job.name === 'cancel') {
+      try {
+        return await this.cancels.processCancel(job.data.ticketId as string);
+      } catch (err) {
+        // Retrying cannot fix a missing role; the failure is recorded for Blockchain monitoring.
+        if (err instanceof NeedsOperatorError) return 'needs-operator';
+        throw err;
+      }
+    }
     return this.mints.processMint(job.data.ticketId as string);
   }
 
@@ -57,8 +71,10 @@ export class ChainWorker implements OnModuleInit, OnApplicationShutdown {
     for (const id of ids) await this.queues.enqueueMint(id);
     const redeemIds = await this.redeems.redemptionsToSweep();
     for (const id of redeemIds) await this.queues.enqueueRedeem(id);
-    if (ids.length || redeemIds.length) this.log.log(`Sweep: ${ids.length} mints and ${redeemIds.length} redeems re-queued`);
-    return ids.length + redeemIds.length;
+    const cancelIds = await this.cancels.cancelsToSweep();
+    for (const id of cancelIds) await this.queues.enqueueCancel(id);
+    if (ids.length || redeemIds.length || cancelIds.length) this.log.log(`Sweep: ${ids.length} mints, ${redeemIds.length} redeems and ${cancelIds.length} cancels re-queued`);
+    return ids.length + redeemIds.length + cancelIds.length;
   }
 
   async onApplicationShutdown() {

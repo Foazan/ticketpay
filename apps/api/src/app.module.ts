@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { AdminController } from './admin/admin.controller';
+import { AdminController, RefundController } from './admin/admin.controller';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard, CsrfGuard, RolesGuard } from './auth/guards';
@@ -34,7 +34,7 @@ import { TicketsController } from './tickets/tickets.controller';
     // Baseline: 120 requests per minute per client. Auth routes set stricter limits.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
   ],
-  controllers: [HealthController, OrganizerController, TicketsController, AdminController],
+  controllers: [HealthController, OrganizerController, TicketsController, AdminController, RefundController],
   providers: [
     OrganizerEventsService,
     ReconciliationService,

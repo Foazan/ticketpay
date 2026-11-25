@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -29,7 +30,7 @@ import {
   type SessionUser,
   type WebhookEventType,
 } from '@ticketpay/shared';
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import { AbiCoder, keccak256 } from 'ethers';
 import { isUniqueViolation } from '../common/db-errors';
 import { newPaymentReference, newValidationCode } from '../common/ids';
@@ -72,6 +73,7 @@ const EVENT_FOR: Partial<Record<PaymentStatus, WebhookEventType>> = {
   PAID: 'payment.paid',
   FAILED: 'payment.failed',
   EXPIRED: 'payment.expired',
+  REFUNDED: 'payment.refunded',
 };
 
 /** keccak256 of (paymentId, merchantId, amount, seq). The only payment data that goes on-chain. */
@@ -125,6 +127,9 @@ export class PaymentsService {
     const [order] = await this.db.select().from(orders).where(eq(orders.id, input.orderId));
     const owns = order && (actor.kind === 'buyer' ? order.buyerId === actor.user.id : order.merchantId === actor.merchantId);
     if (!order || !owns) throw new NotFoundException('Order not found');
+    // A merchant suspended or rejected after the order was placed cannot start new payments.
+    const [m] = await this.db.select({ status: merchants.status }).from(merchants).where(eq(merchants.id, order.merchantId));
+    if (m?.status !== 'APPROVED') throw new ForbiddenException('This organizer is not accepting payments right now');
 
     // Keys are scoped to whoever sent them, so one client can never collide with or read another's.
     const scopedKey = actor.kind === 'buyer' ? `buyer:${actor.user.id}:${idempotencyKey}` : `merchant:${actor.merchantId}:${idempotencyKey}`;
@@ -307,6 +312,14 @@ export class PaymentsService {
       const issued = await this.db.select({ id: tickets.id }).from(tickets).where(eq(tickets.paymentId, result.paymentId)).orderBy(tickets.seq);
       for (const t of issued) await this.queues.enqueueMint(t.id);
     }
+    // A refund cancels the tokens of its tickets on-chain, after commit, so they cannot be used anywhere.
+    if (result.outcome === 'APPLIED' && result.status === 'REFUNDED' && result.paymentId) {
+      const onChain = await this.db
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(and(eq(tickets.paymentId, result.paymentId), eq(tickets.status, 'CANCELLED'), inArray(tickets.mintStatus, ['MINTED', 'SUBMITTED'])));
+      for (const t of onChain) await this.queues.enqueueCancel(t.id);
+    }
     return { outcome: result.outcome, paymentId: result.paymentId, status: result.status };
   }
 
@@ -337,20 +350,56 @@ export class PaymentsService {
         await tx.update(orders).set({ status: target }).where(eq(orders.id, order.id));
       }
     } else if (target === 'REFUNDED') {
-      // Recorded only. TicketPay does not move real money; a refund reported by the provider is mirrored here.
+      // Recorded only. TicketPay does not move real money: a refund reported by the provider, or an
+      // administrator's simulated refund, is mirrored in the records.
       await tx.update(orders).set({ status: 'REFUNDED' }).where(eq(orders.id, order.id));
-      await tx.update(tickets).set({ status: 'CANCELLED' }).where(eq(tickets.paymentId, payment.id));
+      // Tickets not yet used are cancelled and their seats go back on sale. Used tickets stay as they were.
+      const cancelled = await tx
+        .update(tickets)
+        .set({ status: 'CANCELLED' })
+        .where(and(eq(tickets.paymentId, payment.id), eq(tickets.status, 'ACTIVE')))
+        .returning({ tierId: tickets.tierId });
+      const perTier = new Map<string, number>();
+      for (const t of cancelled) perTier.set(t.tierId, (perTier.get(t.tierId) ?? 0) + 1);
+      for (const [tierId, n] of perTier) {
+        await tx
+          .update(ticketTiers)
+          .set({ soldCount: sql`greatest(${ticketTiers.soldCount} - ${n}, 0)` })
+          .where(eq(ticketTiers.id, tierId));
+      }
+      const simulated = update.source === 'ADMIN';
       await tx
         .insert(ledgerEntries)
-        .values({
-          merchantId: payment.merchantId,
-          paymentId: payment.id,
-          type: 'REFUND',
-          direction: 'DEBIT',
-          amount: payment.amount,
-          description: `Refund reported by ${update.source}`,
-          dedupeKey: `${payment.id}:REFUND`,
-        })
+        .values([
+          {
+            merchantId: payment.merchantId,
+            paymentId: payment.id,
+            type: 'REFUND',
+            direction: 'DEBIT',
+            amount: payment.amount,
+            description: simulated ? 'Simulated refund to the buyer (sandbox, no money moved)' : `Refund reported by ${update.source}`,
+            dedupeKey: `${payment.id}:REFUND`,
+          },
+          // Reverse the sale lines so each type nets to zero for a refunded payment.
+          {
+            merchantId: payment.merchantId,
+            paymentId: payment.id,
+            type: 'SERVICE_FEE',
+            direction: 'CREDIT',
+            amount: order.serviceFee,
+            description: 'Service fee reversed by the refund',
+            dedupeKey: `${payment.id}:SERVICE_FEE:REVERSAL`,
+          },
+          {
+            merchantId: payment.merchantId,
+            paymentId: payment.id,
+            type: 'MERCHANT_NET',
+            direction: 'DEBIT',
+            amount: order.subtotal,
+            description: 'Organizer net reversed by the refund',
+            dedupeKey: `${payment.id}:MERCHANT_NET:REVERSAL`,
+          },
+        ])
         .onConflictDoNothing();
     }
 
@@ -550,6 +599,43 @@ export class PaymentsService {
   }
 
   /** Re-enqueues deliveries whose job may have been lost (for example Redis was down at commit time). */
+  /**
+   * Simulated refund by an administrator (brief P1). No money moves and the provider is not called:
+   * the records change exactly as for a refund the provider reported. Refused once any ticket of the
+   * order has been used at the gate.
+   */
+  async refundSimulated(paymentId: string, admin: { id: string; role: string }, reason: string, ip?: string) {
+    const [payment] = await this.db.select().from(payments).where(eq(payments.id, paymentId));
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === 'REFUNDED') return { paymentId, status: 'REFUNDED' as const, alreadyRefunded: true };
+    if (payment.status !== 'PAID') throw new ConflictException(`Only a paid payment can be refunded; this one is ${payment.status}`);
+    const [{ used }] = await this.db
+      .select({ used: count() })
+      .from(tickets)
+      .where(and(eq(tickets.paymentId, paymentId), eq(tickets.status, 'REDEEMED')));
+    if (Number(used) > 0) throw new ConflictException(`${used} ticket(s) of this order were already used at the gate, so it cannot be refunded`);
+    const result = await this.applyUpdate({
+      provider: payment.provider,
+      source: 'ADMIN',
+      reference: payment.reference,
+      providerStatus: 'simulated_refund',
+      target: 'REFUNDED',
+      dedupeKey: `admin-refund:${paymentId}`,
+      payload: { reason, simulated: true },
+    });
+    await this.db.insert(auditLogs).values({
+      actorId: admin.id,
+      actorRole: admin.role,
+      action: 'payment.refund_simulated',
+      entityType: 'Payment',
+      entityId: paymentId,
+      metadata: { reason, outcome: result.outcome },
+      ipAddress: ip ?? null,
+    });
+    const [after] = await this.db.select({ status: payments.status }).from(payments).where(eq(payments.id, paymentId));
+    return { paymentId, status: after.status, alreadyRefunded: false };
+  }
+
   async requeueStuckDeliveries(now = new Date()): Promise<number> {
     const rows = await this.db
       .select({ id: merchantWebhookDeliveries.id })

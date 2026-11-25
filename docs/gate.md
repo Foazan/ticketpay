@@ -82,7 +82,7 @@ The database decides admission, so the gate works at full speed even when Sepoli
 - calls `redeem(tokenId)` with the signer's `GATE_ROLE`, waits for confirmation and stores the transaction hash;
 - sets `ticket_redemptions.chain_status` to `CONFIRMED`.
 
-**Nothing claims an on-chain redeem that did not happen.** Until it is confirmed, the buyer's ticket page shows "On-chain redeem pending" (or "delayed, retrying"), and no transaction hash is shown. Failed jobs are retried with backoff, and a sweep re-queues pending redemptions every minute and failed ones every 10 minutes. A ticket cancelled on-chain is left for an administrator to reconcile (Phase 7).
+**Nothing claims an on-chain redeem that did not happen.** Until it is confirmed, the buyer's ticket page shows "On-chain redeem pending" (or "delayed, retrying"), and no transaction hash is shown. Failed jobs are retried with backoff, and a sweep re-queues pending redemptions every minute and failed ones every 10 minutes. A ticket cancelled on-chain is left for an administrator to reconcile; failed redeems can be retried from the admin Blockchain page.
 
 ## Test coverage
 

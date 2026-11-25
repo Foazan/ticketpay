@@ -6,9 +6,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ChainClient } from '../src/chain/chain.client';
 import { MintService } from '../src/chain/mint.service';
+import { CancelService } from '../src/chain/cancel.service';
 import { RedeemService } from '../src/chain/redeem.service';
+import { ReconciliationService } from '../src/reconciliation/reconciliation.service';
 import { PaymentsService } from '../src/payments/payments.service';
-import { startChainNode, type ChainNode } from './chain-node';
+import { Wallet } from 'ethers';
+import { HARDHAT_KEYS, startChainNode, type ChainNode } from './chain-node';
 import { bootTestApp, csrf, waitFor, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -222,6 +225,54 @@ describe('Chain (local Hardhat)', () => {
     await ctx.db.update(blockchainTransactions).set({ status: 'FAILED' }).where(and(eq(blockchainTransactions.ticketId, t.id), eq(blockchainTransactions.type, 'REDEEM')));
     expect(await ctx.app.get(RedeemService).processRedeem(t.id)).toBe('recovered');
     expect((await redemptionOf(t.id)).chainStatus).toBe('CONFIRMED');
+  });
+
+  const refund = async (paymentId: string) =>
+    (await ctx.login('admin@ticketpay.example')).post(`/v1/payments/${paymentId}/refund`).set(csrf).send({ reason: 'Event date clash for the buyer' });
+  const cancelTx = async (ticketId: string, status: string) =>
+    (await ctx.db.select().from(blockchainTransactions).where(and(eq(blockchainTransactions.ticketId, ticketId), eq(blockchainTransactions.type, 'CANCEL'), eq(blockchainTransactions.status, status as 'FAILED'))))[0];
+
+  it('a simulated refund cancels the minted NFTs on-chain', async () => {
+    const { payment } = await checkout(BUYER, 2);
+    await simulate(BUYER, payment.id, 'paid');
+    const minted = await waitMinted(payment.id, 2);
+    expect((await refund(payment.id)).body).toMatchObject({ status: 'REFUNDED', alreadyRefunded: false });
+    for (const t of minted) {
+      const tx = await waitFor(() => cancelTx(t.id, 'CONFIRMED'), 20_000, 'on-chain cancel');
+      expect(tx.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(await onChainStatus(t.tokenId!)).toBe(3); // Cancelled
+    }
+    // Repeating finds the token already cancelled.
+    expect(await ctx.app.get(CancelService).processCancel(minted[0].id)).toBe('already-confirmed');
+    expect(await ctx.app.get(CancelService).cancelsToSweep(new Date(Date.now() + 11 * 60_000))).not.toContain(minted[0].id);
+    const recon = await ctx.app.get(ReconciliationService).report({ limit: 500 });
+    expect(recon.rows.find((r) => r.paymentId === payment.id)?.status).toBe('MATCHED');
+  });
+
+  it('without the admin role the cancel is recorded as failed with the fix, and an admin retry completes it', async () => {
+    const signer = new Wallet(HARDHAT_KEYS.signer).address;
+    const role = await node.contract.getFunction('DEFAULT_ADMIN_ROLE')();
+    await (await node.contract.getFunction('revokeRole')(role, signer)).wait();
+    const { payment } = await checkout(BUYER, 1);
+    await simulate(BUYER, payment.id, 'paid');
+    const [t] = await waitMinted(payment.id, 1);
+    await refund(payment.id);
+    const failed = await waitFor(() => cancelTx(t.id, 'FAILED'), 20_000, 'failed cancel');
+    expect(failed.errorMessage).toContain('pnpm chain:grant-admin:local');
+    // Not retried by the sweep until it cools down, then picked up again.
+    expect(await ctx.app.get(CancelService).cancelsToSweep()).not.toContain(t.id);
+    expect(await ctx.app.get(CancelService).cancelsToSweep(new Date(Date.now() + 11 * 60_000))).toContain(t.id);
+    expect(await onChainStatus(t.tokenId!)).toBe(1); // still Valid
+    const recon = await ctx.app.get(ReconciliationService).report({ limit: 500 });
+    expect(recon.rows.find((r) => r.paymentId === payment.id)?.status).toBe('INVESTIGATE');
+    const monitor = await (await ctx.login('admin@ticketpay.example')).get('/v1/admin/blockchain?status=FAILED');
+    expect(monitor.body.transactions.map((x: { ticketId: string }) => x.ticketId)).toContain(t.id);
+
+    await (await node.contract.getFunction('grantRole')(role, signer)).wait();
+    const retry = await (await ctx.login('admin@ticketpay.example')).post(`/v1/admin/blockchain/tickets/${t.id}/retry`).set(csrf).send({ action: 'cancel' });
+    expect(retry.status).toBe(200);
+    await waitFor(() => cancelTx(t.id, 'CONFIRMED'), 20_000, 'cancel after retry');
+    expect(await onChainStatus(t.tokenId!)).toBe(3);
   });
 
   // Keep last: it stops the chain node.

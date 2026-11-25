@@ -6,7 +6,7 @@ Digital event ticketing platform with an integrated Payment Facilitator and Ethe
 
 ## Status
 
-Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitator), 5 (NFT tickets) and 6 (QR and gate) are done.
+Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitator), 5 (NFT tickets), 6 (QR and gate) and 7 (organizer and admin dashboards) are done.
 
 | Area | State |
 |---|---|
@@ -20,13 +20,14 @@ Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitat
 | Web: homepage, explore, event detail, login, sign up, checkout, demo payment page, payment status, My Tickets, ticket page with ownership record | Done |
 | Rotating single-use entry QR, gate scanner (camera and manual code), single-use redemption, on-chain redeem | Done |
 | Organizer registration and dashboard: events, ticket categories, posters, transactions, sales analytics, ledger, reconciliation, merchant settings | Done |
-| Admin dashboard | Landing page only (Phase 7) |
-| Reconciliation report, simulated refund | Not built (Phase 7) |
+| Admin dashboard: merchant approval and suspension, event moderation, payments, ledger, reconciliation, service fee, webhook and blockchain monitoring with retries, gate staff, audit log | Done |
+| Simulated refund (`POST /v1/payments/:id/refund`) with ledger reversal and on-chain cancel | Done |
 
 How payments work, the API, and how merchants verify webhooks: [docs/payments.md](docs/payments.md).
 How NFT tickets work, the custodial model and Sepolia setup: [docs/blockchain.md](docs/blockchain.md).
 How the entry QR and the gate work: [docs/gate.md](docs/gate.md).
 The organizer dashboard, event rules and reconciliation: [docs/organizer.md](docs/organizer.md).
+The admin dashboard, merchant decisions, fee settings and the simulated refund: [docs/admin.md](docs/admin.md).
 
 ## Stack
 
@@ -116,7 +117,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 95 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, QR and gate validation, and minting and on-chain redeem (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 114 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|
@@ -125,7 +126,8 @@ The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call 
 | T4 duplicate notification, T6 out-of-order | payments and midtrans suites |
 | T5 invalid provider signature | midtrans suite |
 | T7 merchant webhook failure, T8 invalid HMAC | payments suite |
-| T20 to T24 access control and overselling | app, payments and organizer suites (every organizer write route is checked for T20 and T21; T24 also through quota edits) |
+| T20 to T24 access control and overselling | app, payments, organizer and admin suites (every organizer and admin route is checked for T20; organizer routes for T21; T24 also through quota edits) |
+| Simulated refund: ledger reversal, quota release, `payment.refunded`, on-chain cancel | admin and chain suites, and the browser suite |
 | T9 to T14 contract rules | contract suite (`pnpm chain:test`) |
 | Mint only after verified payment, no double mint, crash recovery | chain suite |
 | T15 to T19 QR and gate, T22 gate staff cannot touch payments | gate suite, and the browser suite (camera scanning with a fake camera) |
@@ -137,7 +139,7 @@ pnpm db:seed && pnpm dev          # in one terminal
 pnpm test:e2e                     # in another; first time: pnpm --filter @ticketpay/web exec playwright install chromium
 ```
 
-The camera scanning test needs `ffmpeg` on the PATH: it turns the buyer's live QR into a fake camera feed. Logins are limited to 10 a minute per address, so wait a minute between repeated runs.
+The camera scanning test needs `ffmpeg` on the PATH: it turns the buyer's live QR into a fake camera feed. Logins are limited to 10 a minute per address, so wait a minute between repeated runs, and reseed (`pnpm db:reset`) before a full rerun.
 
 Other checks: `pnpm typecheck` and `pnpm build`.
 

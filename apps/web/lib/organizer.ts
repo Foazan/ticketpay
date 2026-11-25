@@ -90,7 +90,7 @@ export type Analytics = {
   byTier: { eventId: string; eventTitle: string; eventStatus: EventStatus; startAt: string; tierId: string; tierName: string; price: number; quota: number; sold: number; held: number; revenue: number }[];
   daily: DailySales[];
   paymentMethods: { method: string; count: number; amount: number }[];
-  feeBreakdown: { gross: number; serviceFee: number; providerFee: number | null; organizerNet: number };
+  feeBreakdown: { gross: number; refunds: number; serviceFee: number; providerFee: number | null; organizerNet: number };
 };
 
 export type LedgerEntry = { id: string; paymentId: string; paymentReference: string; type: string; direction: 'CREDIT' | 'DEBIT'; amount: number; description: string; createdAt: string };
@@ -105,8 +105,10 @@ export type ReconRow = {
   providerStatus: string | null;
   paymentStatus: string;
   orderStatus: string;
-  ledger: { gross: number | null; serviceFee: number | null; merchantNet: number | null };
-  tickets: { expected: number; issued: number; minted: number; failed: number; pending: number };
+  ledger: { gross: number | null; serviceFee: number | null; merchantNet: number | null; refund: number | null };
+  tickets: { expected: number; issued: number; minted: number; failed: number; pending: number; refundedMinted: number; cancelledOnChain: number; cancelFailed: number };
+  /** Admin view only. */
+  merchant?: string;
   duplicateNotifications: number;
   status: 'MATCHED' | 'PENDING' | 'MISMATCH' | 'INVESTIGATE';
   findings: string[];

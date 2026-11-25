@@ -53,7 +53,8 @@ export async function startChainNode(port = 18545): Promise<ChainNode> {
   await deployed.waitForDeployment();
   const contract = deployed as unknown as Contract;
   const signer = new Wallet(HARDHAT_KEYS.signer).address;
-  for (const role of ['MINTER_ROLE', 'GATE_ROLE', 'EVENT_MANAGER_ROLE']) {
+  // DEFAULT_ADMIN_ROLE too, as the local deploy script grants it, so refunds can cancel tokens.
+  for (const role of ['MINTER_ROLE', 'GATE_ROLE', 'EVENT_MANAGER_ROLE', 'DEFAULT_ADMIN_ROLE']) {
     const tx = await contract.getFunction('grantRole')(await contract.getFunction(role)(), signer);
     await tx.wait();
   }

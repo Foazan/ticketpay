@@ -125,8 +125,19 @@ Mints on Sepolia take about 12 to 30 seconds. The ticket page links each transac
 | `CHAIN_CONFIRMATIONS` | Blocks to wait before a mint counts as confirmed (default 1) |
 | `MINT_MAX_ATTEMPTS`, `MINT_RETRY_BASE_MS` | Retry policy for a failing mint |
 
+## Refunds: cancelling the token
+
+A simulated refund by an administrator cancels the order's tickets in the database and queues a `cancel` job for each ticket whose NFT was minted (job id `cancel-<ticket id>`, on the same queue as minting, so it runs after a mint still in flight). The job reads the contract first: a token already Cancelled is recorded without sending; a token Redeemed on-chain cannot be cancelled and is flagged for an operator.
+
+`cancel(tokenId)` needs `DEFAULT_ADMIN_ROLE`. The local deploy script grants it to the backend signer. On Sepolia, run once with the deployer key:
+
+```bash
+pnpm chain:grant-admin:sepolia
+```
+
+Until then each cancel is recorded as FAILED with that command as the hint, shown on the admin Blockchain page and as "Requires investigation" in reconciliation; retry it from the Blockchain page afterwards. Granting the hot signer the admin role is a prototype trade-off: it can then grant roles itself. See [admin.md](admin.md).
+
 ## Not built yet
 
-- Redeeming on-chain at the gate, with rotating QR codes (next phase, tests T15 to T19).
-- Cancelling the token on a refund (admin phase).
 - Letting a buyer claim their token to their own wallet.
+- Resale with a price cap (optional P1).

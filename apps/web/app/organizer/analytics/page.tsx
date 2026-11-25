@@ -54,7 +54,11 @@ export default async function SalesAnalytics({ searchParams }: { searchParams: P
           Fee breakdown, all time
         </h2>
         <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Collected from buyers" value={formatRupiah(a.feeBreakdown.gross)} note="Tickets plus service fee" />
+          <Stat
+            label="Collected from buyers"
+            value={formatRupiah(a.feeBreakdown.gross)}
+            note={a.feeBreakdown.refunds ? `Tickets plus service fee; ${formatRupiah(a.feeBreakdown.refunds)} refunded since` : 'Tickets plus service fee'}
+          />
           <Stat label="TicketPay service fee" value={formatRupiah(a.feeBreakdown.serviceFee)} note="Illustrative 3% prototype rate, paid by the buyer" />
           <Stat label="Provider fee" value={a.feeBreakdown.providerFee == null ? 'Not known' : formatRupiah(a.feeBreakdown.providerFee)} note="Not reported in the sandbox, so not deducted" />
           <Stat label="Estimated organizer net" value={formatRupiah(a.feeBreakdown.organizerNet)} note="Internal estimate, not settled funds" />
