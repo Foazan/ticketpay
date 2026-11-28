@@ -40,7 +40,9 @@ const qrFor = async (agent: Agent, ticketId: string) => {
   return res.body.qr as string;
 };
 
-const check = (gate: Agent, action: 'validate' | 'redeem', body: Record<string, unknown>) => gate.post(`/v1/gate/${action}`).set(csrf).send(body);
+/** Soundwave requires a photo ID check, so redeem confirms it unless a test says otherwise. */
+const check = (gate: Agent, action: 'validate' | 'redeem', body: Record<string, unknown>) =>
+  gate.post(`/v1/gate/${action}`).set(csrf).send(action === 'redeem' ? { idChecked: true, ...body } : body);
 
 beforeAll(async () => {
   ctx = await bootTestApp();
@@ -198,6 +200,39 @@ describe('Gate validation', () => {
     for (const id of [a.id, b.id]) expect(await ctx.db.select().from(ticketRedemptions).where(eq(ticketRedemptions.ticketId, id))).toHaveLength(1);
   });
 
+  it('enforces the photo ID check the organizer asked for, consuming nothing until staff confirm it', async () => {
+    const { agent, tickets: [t] } = await buyTickets(BUYER);
+    const gate = await ctx.login(GATE);
+    const qr = await qrFor(agent, t.id);
+    expect((await check(gate, 'validate', { eventId: soundwaveId, qr })).body).toMatchObject({ outcome: 'VALID', requiresIdCheck: true });
+
+    for (const idChecked of [undefined, false]) {
+      const refused = await check(gate, 'redeem', { eventId: soundwaveId, qr, idChecked });
+      expect(refused.body).toMatchObject({ outcome: 'ID_CHECK_REQUIRED', ok: false, requiresIdCheck: true, ticket: { id: t.id } });
+      expect(refused.body.ticket.holderName).toBeTruthy();
+    }
+    // Nothing was used up: the same QR still admits once the ID is confirmed.
+    expect((await ctx.db.select().from(tickets).where(eq(tickets.id, t.id)))[0].status).toBe('ACTIVE');
+    const admitted = await check(gate, 'redeem', { eventId: soundwaveId, qr, idChecked: true });
+    expect(admitted.body).toMatchObject({ outcome: 'ADMITTED', requiresIdCheck: true, idChecked: true });
+    const [audit] = await ctx.db.select().from(auditLogs).where(and(eq(auditLogs.action, 'ticket.redeemed'), eq(auditLogs.entityId, t.id)));
+    expect(audit.metadata).toMatchObject({ idCheckRequired: true, idChecked: true });
+  });
+
+  it('does not ask for an ID at events that do not require one', async () => {
+    await ctx.db.update(events).set({ requiresIdCheck: false }).where(eq(events.id, soundwaveId));
+    try {
+      const { agent, tickets: [t] } = await buyTickets(BUYER);
+      const gate = await ctx.login(GATE);
+      const qr = await qrFor(agent, t.id);
+      expect((await check(gate, 'validate', { eventId: soundwaveId, qr })).body).toMatchObject({ outcome: 'VALID', requiresIdCheck: false });
+      const res = await gate.post('/v1/gate/redeem').set(csrf).send({ eventId: soundwaveId, qr });
+      expect(res.body).toMatchObject({ outcome: 'ADMITTED', requiresIdCheck: false, idChecked: false });
+    } finally {
+      await ctx.db.update(events).set({ requiresIdCheck: true }).where(eq(events.id, soundwaveId));
+    }
+  });
+
   it('accepts the manual code however it is typed', async () => {
     const { tickets: [t] } = await buyTickets(BUYER);
     const gate = await ctx.login(GATE);
@@ -250,6 +285,8 @@ describe('Gate access', () => {
     const sw = res.body.find((e: { id: string }) => e.id === soundwaveId);
     expect(sw.admitted).toBeGreaterThan(0);
     expect(sw.ticketsIssued).toBeGreaterThanOrEqual(sw.admitted);
+    expect(sw.requiresIdCheck).toBe(true);
+    expect(res.body.find((e: { id: string }) => e.id === indieId).requiresIdCheck).toBe(false);
   });
 
   it('T22: gate staff cannot create, pay or read payments, orders or merchant data', async () => {

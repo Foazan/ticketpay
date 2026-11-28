@@ -48,6 +48,7 @@ interface TicketContext {
   orderStatus: string;
   redeemedAt: Date | null;
   redeemedBy: string | null;
+  requiresIdCheck: boolean;
 }
 
 /** How the scanned or typed value was resolved before the ticket checks. */
@@ -66,6 +67,7 @@ const MESSAGES: Record<GateOutcome, string> = {
   NOT_PAID: 'The payment for this ticket is not settled.',
   CANCELLED: 'This ticket has been cancelled or refunded.',
   OWNERSHIP_MISMATCH: 'This QR code was not issued to the current ticket holder.',
+  ID_CHECK_REQUIRED: 'This event requires an ID check. Compare a photo ID with the holder name, then confirm before admitting.',
 };
 
 const result = (outcome: GateOutcome, extra: Partial<GateResult> = {}): GateResult => ({
@@ -136,7 +138,7 @@ export class GateService {
     const chainOwner = await this.chainOwnerCheck(ctx);
     // The NFT sits somewhere other than the holder's address: the records disagree, so do not admit.
     if (chainOwner === 'MISMATCH') return result('OWNERSHIP_MISMATCH', { method: checked.method, chainOwner });
-    return { ...checked, chainOwner };
+    return { ...checked, chainOwner, requiresIdCheck: ctx.requiresIdCheck };
   }
 
   /**
@@ -155,6 +157,10 @@ export class GateService {
       if (!ctx) return result('INVALID');
       const checked = this.evaluate(ctx, input.eventId, lookup);
       if (checked.outcome !== 'VALID') return checked;
+      // Enforced here, not only on the screen: nothing is consumed until staff confirm the ID check.
+      if (ctx.requiresIdCheck && input.idChecked !== true) {
+        return result('ID_CHECK_REQUIRED', { method: checked.method, ticket: checked.ticket, requiresIdCheck: true });
+      }
 
       const method = lookup.kind === 'qr' ? 'QR' : 'MANUAL_CODE';
       if (lookup.kind === 'qr') {
@@ -182,7 +188,14 @@ export class GateService {
         })
         .returning({ id: ticketRedemptions.id, redeemedAt: ticketRedemptions.redeemedAt });
       admitted = { ticketId: ctx.id, redemptionId: redemption.id };
-      return result('ADMITTED', { method, ticket: checked.ticket, redeemedAt: redemption.redeemedAt.toISOString(), redeemedBy: staff.fullName });
+      return result('ADMITTED', {
+        method,
+        ticket: checked.ticket,
+        redeemedAt: redemption.redeemedAt.toISOString(),
+        redeemedBy: staff.fullName,
+        requiresIdCheck: ctx.requiresIdCheck,
+        idChecked: input.idChecked === true,
+      });
     });
 
     if (admitted) {
@@ -193,7 +206,7 @@ export class GateService {
         action: 'ticket.redeemed',
         entityType: 'Ticket',
         entityId: ticketId,
-        metadata: { eventId: input.eventId, method: outcome.method, redemptionId },
+        metadata: { eventId: input.eventId, method: outcome.method, redemptionId, idCheckRequired: outcome.requiresIdCheck ?? false, idChecked: outcome.idChecked ?? false },
         ipAddress: ip,
       });
       // After commit: the on-chain redeem follows. A queue or chain outage never undoes the admission.
@@ -251,6 +264,7 @@ export class GateService {
         tokenId: tickets.tokenId,
         mintStatus: tickets.mintStatus,
         eventTitle: events.title,
+        requiresIdCheck: events.requiresIdCheck,
         tierName: ticketTiers.name,
         holderName: holder.fullName,
         paymentStatus: payments.status,

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { GateScanner } from '@/components/gate-scanner';
+import { Badge } from '@/components/ui';
 import { serverFetch } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import type { GateEvent } from '@/lib/gate';
@@ -28,8 +29,9 @@ export default async function GateScannerPage({ params }: { params: Promise<{ ev
         <p className="text-body-sm text-ink-secondary">
           {formatDateTime(event.startAt)} · {event.venue}, {event.city}
         </p>
+        {event.requiresIdCheck && <Badge tone="pending">Photo ID check required</Badge>}
       </div>
-      <GateScanner eventId={event.id} initialAdmitted={event.admitted} ticketsIssued={event.ticketsIssued} />
+      <GateScanner eventId={event.id} initialAdmitted={event.admitted} ticketsIssued={event.ticketsIssued} requiresIdCheck={event.requiresIdCheck} />
     </div>
   );
 }

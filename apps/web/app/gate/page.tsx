@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { EmptyState } from '@/components/ui';
+import { Badge, EmptyState } from '@/components/ui';
 import { serverFetch } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import type { GateEvent } from '@/lib/gate';
@@ -34,6 +34,11 @@ export default async function GateHome() {
                   <p className="text-body-sm text-ink-secondary">
                     {formatDateTime(e.startAt)} · {e.venue}, {e.city}
                   </p>
+                  {e.requiresIdCheck && (
+                    <span className="mt-1 inline-block">
+                      <Badge tone="pending">Photo ID check required</Badge>
+                    </span>
+                  )}
                 </div>
                 <p className="text-body-sm">
                   <span className="text-h3">{e.admitted}</span> <span className="text-ink-secondary">of {e.ticketsIssued} tickets admitted</span>

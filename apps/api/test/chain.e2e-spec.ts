@@ -177,7 +177,7 @@ describe('Chain (local Hardhat)', () => {
 
   const admit = async (agent: Awaited<ReturnType<TestContext['login']>>, ticketId: string, action: 'validate' | 'redeem' = 'redeem') => {
     const qr = (await agent.get(`/v1/tickets/${ticketId}/qr`)).body.qr;
-    return (await ctx.login(GATE)).post(`/v1/gate/${action}`).set(csrf).send({ eventId: regular.eventId, qr });
+    return (await ctx.login(GATE)).post(`/v1/gate/${action}`).set(csrf).send(action === 'redeem' ? { eventId: regular.eventId, qr, idChecked: true } : { eventId: regular.eventId, qr });
   };
   const redemptionOf = async (ticketId: string) => (await ctx.db.select().from(ticketRedemptions).where(eq(ticketRedemptions.ticketId, ticketId)))[0];
   const onChainStatus = async (tokenId: string) => Number(await node.contract.getFunction('ticketStatus')(BigInt(tokenId)));

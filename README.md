@@ -117,7 +117,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 114 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 116 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|

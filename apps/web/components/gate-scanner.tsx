@@ -21,9 +21,13 @@ const TITLES: Record<GateOutcome, string> = {
   NOT_PAID: 'Not paid',
   CANCELLED: 'Cancelled',
   OWNERSHIP_MISMATCH: 'Ownership check failed',
+  ID_CHECK_REQUIRED: 'Check ID first',
 };
 
-const tone = (r: GateResult) => (r.ok ? 'ok' : r.outcome === 'ALREADY_REDEEMED' || r.outcome === 'EXPIRED' ? 'warn' : 'bad');
+const tone = (r: GateResult) => (r.ok ? 'ok' : r.outcome === 'ALREADY_REDEEMED' || r.outcome === 'EXPIRED' || r.outcome === 'ID_CHECK_REQUIRED' ? 'warn' : 'bad');
+
+/** Outcomes after which staff can still admit this ticket (the ID check is the only thing missing). */
+const admissible = (o: GateOutcome) => o === 'VALID' || o === 'ID_CHECK_REQUIRED';
 
 function cameraError(err: unknown): string {
   const name = (err as { name?: string }).name;
@@ -34,9 +38,21 @@ function cameraError(err: unknown): string {
 
 /**
  * Gate scanner: camera scanning with jsQR, a manual code fallback, a two-step validate-then-admit
- * flow and an optional ID check. Every decision is made by the API; this screen only shows it.
+ * flow and the photo ID check. When the organizer turned on "Check ID at the gate" the check is
+ * mandatory: this screen cannot switch it off and the API refuses to admit without it.
+ * Every decision is made by the API; this screen only shows it.
  */
-export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { eventId: string; initialAdmitted: number; ticketsIssued: number }) {
+export function GateScanner({
+  eventId,
+  initialAdmitted,
+  ticketsIssued,
+  requiresIdCheck,
+}: {
+  eventId: string;
+  initialAdmitted: number;
+  ticketsIssued: number;
+  requiresIdCheck: boolean;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -49,19 +65,23 @@ export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { event
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('');
-  const [checkId, setCheckId] = useState(false);
+  const [idRequired, setIdRequired] = useState(requiresIdCheck);
+  const [optionalIdCheck, setOptionalIdCheck] = useState(false);
+  const checkId = idRequired || optionalIdCheck;
   const [idConfirmed, setIdConfirmed] = useState(false);
   const [admitted, setAdmitted] = useState(initialAdmitted);
 
   const send = useCallback(
-    async (action: 'validate' | 'redeem', input: Input) => {
+    async (action: 'validate' | 'redeem', input: Input, idChecked?: boolean) => {
       setBusy(true);
       setError(null);
       paused.current = true;
       try {
-        const res = await apiFetch<GateResult>(`/v1/gate/${action}`, { method: 'POST', body: { eventId, ...input } });
+        const res = await apiFetch<GateResult>(`/v1/gate/${action}`, { method: 'POST', body: { eventId, ...input, ...(idChecked !== undefined && { idChecked }) } });
+        // The organizer may have turned the ID check on after this page opened: the API says so.
+        if (res.requiresIdCheck) setIdRequired(true);
         setResult(res);
-        setPending(res.outcome === 'VALID' ? input : null);
+        setPending(admissible(res.outcome) ? input : null);
         setIdConfirmed(false);
         if (res.outcome === 'ADMITTED') setAdmitted((n) => n + 1);
         navigator.vibrate?.(res.ok ? 80 : [60, 60, 60]);
@@ -188,13 +208,22 @@ export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { event
           </div>
         </form>
 
-        <label className="flex items-start gap-3 text-body-sm">
-          <input type="checkbox" className="mt-1 h-4 w-4" checked={checkId} onChange={(e) => setCheckId(e.target.checked)} />
-          <span>
-            <span className="text-label">This event requires an ID check</span>
-            <span className="block text-ink-secondary">Compare the holder name with a photo ID before admitting. Do not photograph or keep the ID.</span>
-          </span>
-        </label>
+        {idRequired ? (
+          <div className="rounded-md border-2 border-status-warning bg-status-warning-soft p-4 text-body-sm">
+            <p className="text-label">Photo ID check required</p>
+            <p className="text-ink-secondary">
+              The organizer requires an ID check for this event. Before admitting, compare the holder name with a photo ID (KTP, SIM or passport). Do not photograph or keep the ID.
+            </p>
+          </div>
+        ) : (
+          <label className="flex items-start gap-3 text-body-sm">
+            <input type="checkbox" className="mt-1 h-4 w-4" checked={optionalIdCheck} onChange={(e) => setOptionalIdCheck(e.target.checked)} />
+            <span>
+              <span className="text-label">Also check a photo ID (optional)</span>
+              <span className="block text-ink-secondary">Not required for this event. Compare the holder name with a photo ID before admitting. Do not photograph or keep the ID.</span>
+            </span>
+          </label>
+        )}
       </div>
 
       {/* On a phone the result comes first, so staff never scroll to see it. */}
@@ -267,7 +296,7 @@ export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { event
                 </dl>
               )}
 
-              {result.outcome === 'VALID' && pending && (
+              {admissible(result.outcome) && pending && (
                 <div className="space-y-3">
                   {checkId && result.ticket && (
                     <label className="flex items-start gap-3 text-body-sm">
@@ -276,7 +305,7 @@ export function GateScanner({ eventId, initialAdmitted, ticketsIssued }: { event
                     </label>
                   )}
                   <div className="grid grid-cols-2 gap-3">
-                    <Button variant="accent" disabled={busy || (checkId && !idConfirmed)} onClick={() => void send('redeem', pending)}>
+                    <Button variant="accent" disabled={busy || (checkId && !idConfirmed)} onClick={() => void send('redeem', pending, checkId ? idConfirmed : undefined)}>
                       {busy ? 'Admitting…' : 'Admit'}
                     </Button>
                     <Button variant="secondary" disabled={busy} onClick={reset}>

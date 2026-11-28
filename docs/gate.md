@@ -23,7 +23,7 @@ Gate staff log in with a `GATE_STAFF` account.
    - The camera reads the QR automatically (jsQR in the browser). Browsers allow the camera only on HTTPS or `localhost`.
    - If there is no camera, staff type the manual code. Case, spaces and dashes do not matter.
    - A scan only **validates**. If the ticket is valid, staff see the holder's name, tier and ticket number, and press **Admit** to redeem it. **Don't admit** leaves the ticket untouched.
-   - **ID check.** When an event requires it, staff tick "This event requires an ID check". Admit then stays disabled until they confirm they compared a photo ID with the holder's name. Nothing is photographed or stored.
+   - **ID check.** When the organizer turns on "Check ID at the gate" for an event, the check is mandatory. The gate list and scanner show "Photo ID check required", and staff cannot switch it off. After a valid scan, Admit stays disabled until they confirm they compared a photo ID (KTP, SIM or passport) with the holder's name, which is the full name of the buyer's account. The API enforces it too: a redeem without `idChecked: true` answers `ID_CHECK_REQUIRED` and uses up nothing, so the same QR still admits once the ID is confirmed. The audit row for the admission records `idCheckRequired` and `idChecked`. At events without the requirement, staff can still choose to check an ID. Nothing is photographed or stored, and no ID number is ever entered.
    - On a phone the result appears above the camera, so staff never scroll to read it.
 
 Results:

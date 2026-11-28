@@ -275,6 +275,8 @@ export const gateCheckSchema = z
     eventId: z.string().trim().min(1).max(64),
     qr: z.string().trim().max(200).optional(),
     code: z.string().trim().max(40).optional(),
+    /** Redeem only: staff confirm they compared a photo ID with the holder name. Required when the event asks for an ID check. */
+    idChecked: z.boolean().optional(),
   })
   .refine((v) => Boolean(v.qr) !== Boolean(v.code), { message: 'Send either a scanned QR or a manual code, not both' });
 export type GateCheckInput = z.infer<typeof gateCheckSchema>;
@@ -289,6 +291,7 @@ export const GATE_OUTCOMES = [
   'NOT_PAID',
   'CANCELLED',
   'OWNERSHIP_MISMATCH',
+  'ID_CHECK_REQUIRED',
 ] as const;
 export type GateOutcome = (typeof GATE_OUTCOMES)[number];
 
@@ -311,6 +314,10 @@ export interface GateResult {
   redeemedBy?: string;
   /** Whether the NFT is held by the holder's custodial address. SKIPPED when the chain is off, not minted yet or unreachable. */
   chainOwner?: 'MATCH' | 'MISMATCH' | 'SKIPPED';
+  /** The organizer asked for a photo ID check at this event: staff must confirm it before admitting. */
+  requiresIdCheck?: boolean;
+  /** On ADMITTED: whether staff confirmed a photo ID check. */
+  idChecked?: boolean;
 }
 
 // ---------- Organizer: events and tiers ----------

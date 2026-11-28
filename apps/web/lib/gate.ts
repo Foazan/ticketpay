@@ -8,4 +8,5 @@ export type GateEvent = {
   endAt: string;
   ticketsIssued: number;
   admitted: number;
+  requiresIdCheck: boolean;
 };

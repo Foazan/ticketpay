@@ -92,6 +92,9 @@ test('gate staff scan a QR with the camera, admit once, and a second scan is rej
     await expect(result(page)).toHaveAttribute('data-outcome', 'VALID', { timeout: 15_000 });
     await expect(result(page)).toContainText('Rania Putri');
     await expect(result(page)).toContainText('Regular');
+    // Soundwave requires a photo ID check: Admit stays off until staff confirm it.
+    await expect(page.getByRole('button', { name: 'Admit', exact: true })).toBeDisabled();
+    await page.getByLabel(/I checked a photo ID/).check();
     await page.getByRole('button', { name: 'Admit', exact: true }).click();
     await expect(result(page)).toHaveAttribute('data-outcome', 'ADMITTED');
     // The same QR is still in front of the camera.
@@ -105,7 +108,7 @@ test('gate staff scan a QR with the camera, admit once, and a second scan is rej
   expect(after.status).toBe('REDEEMED');
 });
 
-test('the manual code works without a camera, with an optional ID check', async ({ page }) => {
+test('the manual code works without a camera, and the required ID check cannot be skipped', async ({ page }) => {
   const api = buyerApi;
   const [ticket] = await buyTickets(api, 1);
   await openScanner(page);
@@ -116,7 +119,9 @@ test('the manual code works without a camera, with an optional ID check', async 
   await expect(result(page)).toHaveAttribute('data-outcome', 'INVALID');
   await page.getByRole('button', { name: 'Scan next ticket' }).click();
 
-  await page.getByLabel(/This event requires an ID check/).check();
+  // Required by the organizer, so it is a notice rather than a switch staff could turn off.
+  await expect(page.getByText('Photo ID check required').first()).toBeVisible();
+  await expect(page.getByLabel(/Also check a photo ID/)).toHaveCount(0);
   await code.fill(ticket.validationCode!.toLowerCase());
   await page.getByRole('button', { name: 'Check' }).click();
   await expect(result(page)).toHaveAttribute('data-outcome', 'VALID');

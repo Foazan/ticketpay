@@ -24,7 +24,7 @@ export class GateController {
   @Get('events')
   async events(@CurrentUser() user: SessionUser) {
     const rows = await this.db
-      .select({ id: events.id, title: events.title, slug: events.slug, city: events.city, venue: events.venue, startAt: events.startAt, endAt: events.endAt })
+      .select({ id: events.id, title: events.title, slug: events.slug, city: events.city, venue: events.venue, startAt: events.startAt, endAt: events.endAt, requiresIdCheck: events.requiresIdCheck })
       .from(gateEventPermissions)
       .innerJoin(events, eq(gateEventPermissions.eventId, events.id))
       .where(and(eq(gateEventPermissions.gateStaffId, user.id), isNull(events.deletedAt)))
