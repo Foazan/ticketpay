@@ -17,3 +17,6 @@ blockchain/typechain-types
 blockchain/deployments/localhost.json
 dump.rdb
 apps/api/storage/
+
+# OCR engine files, copied from node_modules by apps/web/scripts/copy-ocr-assets.mjs
+apps/web/public/ocr/

@@ -1,6 +1,6 @@
 // Gate flow in a real browser: the buyer's rotating QR, camera scanning (fed by a fake camera that
 // shows the real QR), admission, the already-used result and the manual code fallback.
-import { chromium, expect, request, test, type APIRequestContext, type Page } from '@playwright/test';
+import { chromium, expect, request, test, type APIRequestContext, type Cookie, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,12 +38,23 @@ async function buyTickets(api: APIRequestContext, quantity: number): Promise<Tic
   return Promise.all(active.slice(0, quantity).map(async (t) => (await api.get(`/v1/tickets/${t.id}`)).json()));
 }
 
+// Logins are rate limited (10 a minute per address) and the whole browser suite shares one address,
+// so each account signs in through the form once and later tests reuse its session cookie.
+const sessions = new Map<string, Cookie[]>();
+
 async function login(page: Page, email: string, next: string) {
+  const saved = sessions.get(email);
+  if (saved) {
+    await page.context().addCookies(saved);
+    await page.goto(next);
+    return;
+  }
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL((url) => url.pathname === next);
+  sessions.set(email, (await page.context().cookies()).filter((c) => c.name === 'tp_session'));
 }
 
 async function openScanner(page: Page) {
@@ -145,4 +156,56 @@ test('the manual code works without a camera, and the required ID check cannot b
   await expect(buyerPage.getByText('This ticket was used to enter the event.')).toBeVisible();
   await expect(buyerPage.getByRole('img', { name: /Entry QR code/ })).toHaveCount(0);
   await buyer.close();
+});
+
+/** A fictional, KTP-style card rendered in the browser (no real person's data). */
+async function idCardPhoto(page: Page, name: string): Promise<Buffer> {
+  const card = await page.context().newPage();
+  await card.setContent(`
+    <div id="card" style="width:860px;padding:28px 36px;background:#dbeaf7;font:bold 26px Arial,sans-serif;color:#111;line-height:1.55">
+      <div style="text-align:center">PROVINSI JAWA TIMUR<br>KOTA MALANG</div>
+      <div style="margin-top:14px">NIK : 3573000000000001</div>
+      <div>Nama : ${name}</div>
+      <div>Tempat/Tgl Lahir : MALANG, 01-01-2001</div>
+      <div>Jenis Kelamin : PEREMPUAN</div>
+      <div>Alamat : JL. CONTOH NO. 1</div>
+      <div style="margin-top:10px;font-size:16px">SPECIMEN FOR TESTING - FICTIONAL</div>
+    </div>`);
+  const png = await card.locator('#card').screenshot();
+  await card.close();
+  return png;
+}
+
+test('gate staff can read the name from a photo of the ID card, on the phone only', async ({ page }) => {
+  test.slow(); // the first read loads the OCR engine
+  const [ticket] = await buyTickets(buyerApi, 1);
+  await openScanner(page);
+  await page.getByLabel('Manual code').fill(ticket.validationCode!);
+  await page.getByRole('button', { name: 'Check' }).click();
+  await expect(result(page)).toHaveAttribute('data-outcome', 'VALID');
+
+  const uploads: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() !== 'GET' && !r.url().includes('/v1/gate/')) uploads.push(r.url());
+  });
+  const scan = page.locator('[data-id-scan]');
+  const reader = page.getByLabel('Read name from ID card');
+
+  // Someone else's card: flagged.
+  await reader.setInputFiles({ name: 'id.png', mimeType: 'image/png', buffer: await idCardPhoto(page, 'BIMA SANTOSO') });
+  await expect(scan).toHaveAttribute('data-id-scan', 'NO_MATCH', { timeout: 90_000 });
+  await expect(scan.getByText('Name does not match')).toBeVisible();
+
+  // The holder's card: matches, shows only the name (never the NIK), and staff still confirm.
+  await page.getByLabel('Read another photo').setInputFiles({ name: 'id.png', mimeType: 'image/png', buffer: await idCardPhoto(page, 'RANIA PUTRI') });
+  await expect(scan).toHaveAttribute('data-id-scan', 'MATCH', { timeout: 60_000 });
+  await expect(scan.getByText('RANIA PUTRI', { exact: true })).toBeVisible();
+  await expect(page.getByText('3573000000000001')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Admit', exact: true })).toBeDisabled();
+  await page.getByLabel(/I checked a photo ID/).check();
+  await page.getByRole('button', { name: 'Admit', exact: true }).click();
+  await expect(result(page)).toHaveAttribute('data-outcome', 'ADMITTED');
+
+  // The photo was never sent anywhere: the only writes were the gate check and admission.
+  expect(uploads).toEqual([]);
 });

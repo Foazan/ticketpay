@@ -1,11 +1,12 @@
 'use client';
 
-import type { GateOutcome, GateResult } from '@ticketpay/shared';
+import type { GateOutcome, GateResult, IdCheckMethod } from '@ticketpay/shared';
 import clsx from 'clsx';
 import jsQR from 'jsqr';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { IdNameScan } from './id-name-scan';
 import { Button } from './ui';
 
 type Input = { qr: string } | { code: string };
@@ -69,20 +70,23 @@ export function GateScanner({
   const [optionalIdCheck, setOptionalIdCheck] = useState(false);
   const checkId = idRequired || optionalIdCheck;
   const [idConfirmed, setIdConfirmed] = useState(false);
+  // How staff checked the ID for the current ticket: by eye, or helped by reading the card.
+  const [idCheckMethod, setIdCheckMethod] = useState<IdCheckMethod>('VISUAL');
   const [admitted, setAdmitted] = useState(initialAdmitted);
 
   const send = useCallback(
-    async (action: 'validate' | 'redeem', input: Input, idChecked?: boolean) => {
+    async (action: 'validate' | 'redeem', input: Input, id?: { idChecked: boolean; idCheckMethod: IdCheckMethod }) => {
       setBusy(true);
       setError(null);
       paused.current = true;
       try {
-        const res = await apiFetch<GateResult>(`/v1/gate/${action}`, { method: 'POST', body: { eventId, ...input, ...(idChecked !== undefined && { idChecked }) } });
+        const res = await apiFetch<GateResult>(`/v1/gate/${action}`, { method: 'POST', body: { eventId, ...input, ...id } });
         // The organizer may have turned the ID check on after this page opened: the API says so.
         if (res.requiresIdCheck) setIdRequired(true);
         setResult(res);
         setPending(admissible(res.outcome) ? input : null);
         setIdConfirmed(false);
+        setIdCheckMethod('VISUAL');
         if (res.outcome === 'ADMITTED') setAdmitted((n) => n + 1);
         navigator.vibrate?.(res.ok ? 80 : [60, 60, 60]);
       } catch (err) {
@@ -100,6 +104,7 @@ export function GateScanner({
     setPending(null);
     setError(null);
     setIdConfirmed(false);
+    setIdCheckMethod('VISUAL');
     lastText.current = null;
     paused.current = false;
   };
@@ -304,6 +309,7 @@ export function GateScanner({
 
               {admissible(result.outcome) && pending && (
                 <div className="space-y-3">
+                  {checkId && result.ticket && <IdNameScan key={result.ticket.id} holderName={result.ticket.holderName} onResult={setIdCheckMethod} />}
                   {checkId && result.ticket && (
                     <label className="flex items-start gap-3 text-body-sm">
                       <input type="checkbox" className="mt-1 h-4 w-4" checked={idConfirmed} onChange={(e) => setIdConfirmed(e.target.checked)} />
@@ -311,7 +317,7 @@ export function GateScanner({
                     </label>
                   )}
                   <div className="grid grid-cols-2 gap-3">
-                    <Button variant="accent" disabled={busy || (checkId && !idConfirmed)} onClick={() => void send('redeem', pending, checkId ? idConfirmed : undefined)}>
+                    <Button variant="accent" disabled={busy || (checkId && !idConfirmed)} onClick={() => void send('redeem', pending, checkId ? { idChecked: idConfirmed, idCheckMethod } : undefined)}>
                       {busy ? 'Admitting…' : 'Admit'}
                     </Button>
                     <Button variant="secondary" disabled={busy} onClick={reset}>

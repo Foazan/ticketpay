@@ -19,7 +19,7 @@
     "dev": "pnpm --parallel --filter @ticketpay/api --filter @ticketpay/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @ticketpay/api test",
+    "test": "pnpm --filter @ticketpay/web test:unit && pnpm --filter @ticketpay/api test",
     "secrets": "node infrastructure/scripts/generate-secrets.mjs",
     "chain:compile": "pnpm --filter @ticketpay/contracts compile",
     "chain:test": "pnpm --filter @ticketpay/contracts test",

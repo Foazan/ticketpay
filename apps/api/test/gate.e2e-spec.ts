@@ -213,10 +213,12 @@ describe('Gate validation', () => {
     }
     // Nothing was used up: the same QR still admits once the ID is confirmed.
     expect((await ctx.db.select().from(tickets).where(eq(tickets.id, t.id)))[0].status).toBe('ACTIVE');
-    const admitted = await check(gate, 'redeem', { eventId: soundwaveId, qr, idChecked: true });
+    expect((await check(gate, 'redeem', { eventId: soundwaveId, qr, idChecked: true, idCheckMethod: 'FACE_SCAN' })).status).toBe(400);
+    const admitted = await check(gate, 'redeem', { eventId: soundwaveId, qr, idChecked: true, idCheckMethod: 'OCR_MATCH' });
     expect(admitted.body).toMatchObject({ outcome: 'ADMITTED', requiresIdCheck: true, idChecked: true });
     const [audit] = await ctx.db.select().from(auditLogs).where(and(eq(auditLogs.action, 'ticket.redeemed'), eq(auditLogs.entityId, t.id)));
-    expect(audit.metadata).toMatchObject({ idCheckRequired: true, idChecked: true });
+    // How the ID was checked is recorded; nothing from the card itself ever reaches the server.
+    expect(audit.metadata).toMatchObject({ idCheckRequired: true, idChecked: true, idCheckMethod: 'OCR_MATCH' });
   });
 
   it('does not ask for an ID at events that do not require one', async () => {

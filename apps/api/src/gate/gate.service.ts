@@ -208,7 +208,7 @@ export class GateService {
         action: 'ticket.redeemed',
         entityType: 'Ticket',
         entityId: ticketId,
-        metadata: { eventId: input.eventId, method: outcome.method, redemptionId, idCheckRequired: outcome.requiresIdCheck ?? false, idChecked: outcome.idChecked ?? false },
+        metadata: { eventId: input.eventId, method: outcome.method, redemptionId, idCheckRequired: outcome.requiresIdCheck ?? false, idChecked: outcome.idChecked ?? false, ...(outcome.idChecked && { idCheckMethod: input.idCheckMethod ?? 'VISUAL' }) },
         ipAddress: ip,
       });
       // After commit: the on-chain redeem follows. A queue or chain outage never undoes the admission.

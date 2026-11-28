@@ -307,9 +307,17 @@ export const gateCheckSchema = z
     code: z.string().trim().max(40).optional(),
     /** Redeem only: staff confirm they compared a photo ID with the holder name. Required when the event asks for an ID check. */
     idChecked: z.boolean().optional(),
+    /** Redeem only: how the ID was checked, for the audit log. The card itself never reaches the server. */
+    idCheckMethod: z.enum(['VISUAL', 'OCR_MATCH', 'OCR_PARTIAL', 'OCR_NO_MATCH']).optional(),
   })
   .refine((v) => Boolean(v.qr) !== Boolean(v.code), { message: 'Send either a scanned QR or a manual code, not both' });
 export type GateCheckInput = z.infer<typeof gateCheckSchema>;
+
+/**
+ * How staff checked a photo ID: by eye, or helped by reading the card's name on their phone
+ * (OCR_* is what the reader concluded; staff still decide).
+ */
+export type IdCheckMethod = 'VISUAL' | 'OCR_MATCH' | 'OCR_PARTIAL' | 'OCR_NO_MATCH';
 
 export const GATE_OUTCOMES = [
   'VALID',

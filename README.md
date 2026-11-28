@@ -23,6 +23,7 @@ Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitat
 | Admin dashboard: merchant approval and suspension, event moderation, payments, ledger, reconciliation, service fee, webhook and blockchain monitoring with retries, gate staff, audit log | Done |
 | Simulated refund (`POST /v1/payments/:id/refund`) with ledger reversal and on-chain cancel | Done |
 | Account page for every role: edit name and phone, change password | Done |
+| Gate: mandatory photo ID check per event, with optional on-device reading of the name on the ID card | Done |
 
 How payments work, the API, and how merchants verify webhooks: [docs/payments.md](docs/payments.md).
 How NFT tickets work, the custodial model and Sepolia setup: [docs/blockchain.md](docs/blockchain.md).
@@ -118,7 +119,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 120 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, account editing, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 120 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, account editing, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm test` first runs 11 unit tests of the ID card name matcher (`apps/web/lib/id-name-match.test.ts`). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|
