@@ -1,4 +1,3 @@
-import { ROLE_HOME } from '@ticketpay/shared';
 import { Ticket } from 'lucide-react';
 import Link from 'next/link';
 import { getSession } from '@/lib/session';
@@ -20,6 +19,8 @@ export async function SiteHeader() {
             <Link href="/gate" className="text-ink-secondary hover:text-ink-primary">Gate</Link>
           ) : user?.role === 'ORGANIZER' ? (
             <Link href="/organizer" className="text-ink-secondary hover:text-ink-primary">Dashboard</Link>
+          ) : user?.role === 'ADMIN' ? (
+            <Link href="/admin" className="text-ink-secondary hover:text-ink-primary">Admin</Link>
           ) : (
             <Link href="/buyer/tickets" className="text-ink-secondary hover:text-ink-primary">My Tickets</Link>
           )}
@@ -27,7 +28,7 @@ export async function SiteHeader() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
-              <Link href={ROLE_HOME[user.role]} className="text-label text-ink-secondary hover:text-ink-primary">
+              <Link href="/account" title="Account settings" className="text-label text-ink-secondary hover:text-ink-primary">
                 {user.fullName}
               </Link>
               <LogoutButton />

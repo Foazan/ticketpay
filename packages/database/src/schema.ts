@@ -73,6 +73,10 @@ export const users = pgTable(
     role: roleEnum().notNull().default('BUYER'),
     // Deterministic custodial address derived server-side; holds this user's ticket tokens.
     custodialAddress: text().unique(),
+    // Last time the user changed their own name. The gate warns when it is after a ticket was bought.
+    nameChangedAt: ts(),
+    // Bumped when the password changes: sessions signed with an older version stop working.
+    sessionVersion: integer().notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: ts(),

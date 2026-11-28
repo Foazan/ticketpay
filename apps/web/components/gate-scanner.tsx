@@ -296,6 +296,12 @@ export function GateScanner({
                 </dl>
               )}
 
+              {result.holderNameChangedAt && (
+                <p role="note" className="rounded-md border border-status-warning bg-bg-surface px-3 py-2 text-body-sm">
+                  The holder changed their account name on {formatDateTime(result.holderNameChangedAt)}, after this ticket was bought. Check the photo ID carefully.
+                </p>
+              )}
+
               {admissible(result.outcome) && pending && (
                 <div className="space-y-3">
                   {checkId && result.ticket && (

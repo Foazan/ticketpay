@@ -20,9 +20,7 @@ export class AuthGuard implements CanActivate {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [context.getHandler(), context.getClass()]);
     if (isPublic) return true;
     const req = context.switchToHttp().getRequest<Request & { user?: unknown }>();
-    const userId = this.auth.verifySession(req.cookies?.[SESSION_COOKIE]);
-    if (!userId) throw new UnauthorizedException('You need to log in');
-    req.user = await this.auth.sessionUser(userId);
+    req.user = await this.auth.authenticate(req.cookies?.[SESSION_COOKIE]);
     return true;
   }
 }

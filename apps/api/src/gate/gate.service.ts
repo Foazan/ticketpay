@@ -49,6 +49,8 @@ interface TicketContext {
   redeemedAt: Date | null;
   redeemedBy: string | null;
   requiresIdCheck: boolean;
+  issuedAt: Date;
+  holderNameChangedAt: Date | null;
 }
 
 /** How the scanned or typed value was resolved before the ticket checks. */
@@ -159,7 +161,7 @@ export class GateService {
       if (checked.outcome !== 'VALID') return checked;
       // Enforced here, not only on the screen: nothing is consumed until staff confirm the ID check.
       if (ctx.requiresIdCheck && input.idChecked !== true) {
-        return result('ID_CHECK_REQUIRED', { method: checked.method, ticket: checked.ticket, requiresIdCheck: true });
+        return result('ID_CHECK_REQUIRED', { method: checked.method, ticket: checked.ticket, requiresIdCheck: true, holderNameChangedAt: checked.holderNameChangedAt });
       }
 
       const method = lookup.kind === 'qr' ? 'QR' : 'MANUAL_CODE';
@@ -267,6 +269,8 @@ export class GateService {
         requiresIdCheck: events.requiresIdCheck,
         tierName: ticketTiers.name,
         holderName: holder.fullName,
+        holderNameChangedAt: holder.nameChangedAt,
+        issuedAt: tickets.createdAt,
         paymentStatus: payments.status,
         orderStatus: orders.status,
         redeemedAt: ticketRedemptions.redeemedAt,
@@ -290,6 +294,8 @@ export class GateService {
   private evaluate(ctx: TicketContext, eventId: string, lookup: Exclude<Lookup, { kind: 'none' }>): GateResult {
     const ticket = { id: ctx.id, holderName: ctx.holderName, tierName: ctx.tierName, seq: ctx.seq, eventTitle: ctx.eventTitle, tokenId: ctx.tokenId };
     const method = lookup.kind === 'qr' ? 'QR' : 'MANUAL_CODE';
+    // The holder renamed their account after buying: the name on screen may not be the buyer's.
+    const renamed = ctx.holderNameChangedAt && ctx.holderNameChangedAt > ctx.issuedAt ? { holderNameChangedAt: ctx.holderNameChangedAt.toISOString() } : {};
     // A ticket for another event reveals nothing about its holder.
     if (ctx.eventId !== eventId) return result('WRONG_EVENT', { method });
     if (ctx.orderStatus === 'REFUNDED' || ctx.status === 'CANCELLED' || ctx.status === 'EXPIRED') return result('CANCELLED', { method, ticket });
@@ -303,7 +309,7 @@ export class GateService {
       if (lookup.token.usedAt) return result('ALREADY_REDEEMED', { method, ticket });
       if (lookup.token.expiresAt.getTime() < Date.now()) return result('EXPIRED', { method });
     }
-    return result('VALID', { method, ticket });
+    return result('VALID', { method, ticket, ...renamed });
   }
 
   /**

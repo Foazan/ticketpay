@@ -33,6 +33,36 @@ export const registerSchema = z.object({
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+// ---------- Own account ----------
+
+/** The signed-in user's own profile. Email is the login and cannot be changed in the prototype. */
+export interface Account {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  role: Role;
+  nameChangedAt: string | null;
+  createdAt: string;
+}
+
+export const updateProfileSchema = z.object({
+  fullName: z.string().trim().min(2, 'Use at least 2 characters').max(120),
+  /** Empty removes the number. */
+  phone: z
+    .string()
+    .trim()
+    .max(20)
+    .refine((v) => v === '' || /^\+?[0-9 ()-]{8,20}$/.test(v), 'Enter a phone number such as 0812 3456 7890')
+    .optional(),
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+export const changePasswordSchema = z
+  .object({ currentPassword: z.string().min(1, 'Enter your current password').max(128), newPassword: password })
+  .refine((v) => v.currentPassword !== v.newPassword, { message: 'Choose a password different from the current one', path: ['newPassword'] });
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
 export const registerOrganizerSchema = registerSchema.extend({
   businessName: z.string().trim().min(2).max(160),
   organizerType: z.string().trim().min(2).max(80),
@@ -318,6 +348,8 @@ export interface GateResult {
   requiresIdCheck?: boolean;
   /** On ADMITTED: whether staff confirmed a photo ID check. */
   idChecked?: boolean;
+  /** Set when the holder renamed their account after this ticket was bought: check the ID with extra care. */
+  holderNameChangedAt?: string;
 }
 
 // ---------- Organizer: events and tiers ----------

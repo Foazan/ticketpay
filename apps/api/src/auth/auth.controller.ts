@@ -28,8 +28,8 @@ export class AuthController {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  private setSession(res: Response, userId: string) {
-    res.cookie(SESSION_COOKIE, this.auth.signSession(userId), {
+  private async setSession(res: Response, userId: string) {
+    res.cookie(SESSION_COOKIE, await this.auth.signSession(userId), {
       httpOnly: true,
       sameSite: 'lax',
       secure: this.env.NODE_ENV === 'production',
@@ -43,7 +43,7 @@ export class AuthController {
   @Post('register')
   async register(@Body(new ZodPipe(registerSchema)) body: RegisterInput, @Res({ passthrough: true }) res: Response, @Ip() ip: string) {
     const user = await this.auth.register(body);
-    this.setSession(res, user.id);
+    await this.setSession(res, user.id);
     await this.audit.record({ actorId: user.id, actorRole: user.role, action: 'user.registered', entityType: 'User', entityId: user.id, ipAddress: ip });
     return { user };
   }
@@ -57,7 +57,7 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     const user = await this.auth.registerOrganizer(body);
-    this.setSession(res, user.id);
+    await this.setSession(res, user.id);
     await this.audit.record({
       actorId: user.id,
       actorRole: user.role,
@@ -75,7 +75,7 @@ export class AuthController {
   @Post('login')
   async login(@Body(new ZodPipe(loginSchema)) body: LoginInput, @Res({ passthrough: true }) res: Response, @Ip() ip: string) {
     const user = await this.auth.login(body);
-    this.setSession(res, user.id);
+    await this.setSession(res, user.id);
     await this.audit.record({ actorId: user.id, actorRole: user.role, action: 'user.logged_in', entityType: 'User', entityId: user.id, ipAddress: ip });
     return { user };
   }

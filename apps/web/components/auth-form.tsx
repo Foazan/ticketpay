@@ -15,7 +15,7 @@ const FIELDS: Record<'login' | 'register', Field[]> = {
     { name: 'password', label: 'Password', type: 'password', placeholder: 'Enter your password', autoComplete: 'current-password' },
   ],
   register: [
-    { name: 'fullName', label: 'Full name', placeholder: 'Your name as shown at the gate', autoComplete: 'name' },
+    { name: 'fullName', label: 'Full name', placeholder: 'As on your KTP, SIM or passport', autoComplete: 'name' },
     { name: 'email', label: 'Email', type: 'email', placeholder: 'you@example.com', autoComplete: 'email' },
     { name: 'phone', label: 'Phone (optional)', placeholder: '08xx xxxx xxxx', autoComplete: 'tel' },
     { name: 'password', label: 'Password', type: 'password', placeholder: 'At least 8 characters', autoComplete: 'new-password' },

@@ -31,9 +31,7 @@ export class PaymentActorResolver {
       if (row.status !== 'APPROVED') throw new ForbiddenException('This merchant is not approved to accept payments');
       return { kind: 'merchant', merchantId: row.merchantId };
     }
-    const userId = this.auth.verifySession(req.cookies?.[SESSION_COOKIE]);
-    if (!userId) throw new UnauthorizedException('You need to log in');
-    const user = await this.auth.sessionUser(userId);
+    const user = await this.auth.authenticate(req.cookies?.[SESSION_COOKIE]);
     if (user.role !== 'BUYER') throw new ForbiddenException('Only buyer accounts can pay for orders');
     return { kind: 'buyer', user };
   }

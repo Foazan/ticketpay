@@ -83,8 +83,11 @@ export class AuthService {
     return this.sessionUser(row.id);
   }
 
-  /** Loads the current user and merchant from the database. Throws 401 if the account no longer exists. */
-  async sessionUser(userId: string): Promise<SessionUser> {
+  /**
+   * Loads the current user and merchant from the database. Throws 401 if the account no longer exists,
+   * or if `version` is given and the password has changed since that session was signed.
+   */
+  async sessionUser(userId: string, version?: number): Promise<SessionUser> {
     const [row] = await this.db
       .select({
         id: users.id,
@@ -94,12 +97,13 @@ export class AuthService {
         merchantId: merchants.id,
         businessName: merchants.businessName,
         merchantStatus: merchants.status,
+        sessionVersion: users.sessionVersion,
       })
       .from(users)
       .leftJoin(merchants, and(eq(merchants.userId, users.id), isNull(merchants.deletedAt)))
       .where(and(eq(users.id, userId), isNull(users.deletedAt)))
       .limit(1);
-    if (!row) throw new UnauthorizedException('Session is no longer valid');
+    if (!row || (version !== undefined && version !== row.sessionVersion)) throw new UnauthorizedException('Session is no longer valid');
     return {
       id: row.id,
       email: row.email,
@@ -109,18 +113,29 @@ export class AuthService {
     };
   }
 
-  signSession(userId: string): string {
-    return jwt.sign({ sub: userId }, this.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: SESSION_TTL_SECONDS });
+  /** Signs a session for the user's current session version (read fresh, so it is never stale). */
+  async signSession(userId: string): Promise<string> {
+    const [row] = await this.db.select({ v: users.sessionVersion }).from(users).where(eq(users.id, userId));
+    return jwt.sign({ sub: userId, sv: row?.v ?? 0 }, this.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: SESSION_TTL_SECONDS });
   }
 
-  /** Returns the user id from a session token, or null if the token is missing, expired or forged. */
-  verifySession(token: string | undefined): string | null {
+  /** Returns the user id and session version from a token, or null if it is missing, expired or forged. */
+  verifySession(token: string | undefined): { userId: string; version: number } | null {
     if (!token) return null;
     try {
       const payload = jwt.verify(token, this.env.JWT_SECRET, { algorithms: ['HS256'] });
-      return typeof payload === 'object' && typeof payload.sub === 'string' ? payload.sub : null;
+      if (typeof payload !== 'object' || typeof payload.sub !== 'string') return null;
+      // Sessions signed before versions existed count as version 0.
+      return { userId: payload.sub, version: typeof payload.sv === 'number' ? payload.sv : 0 };
     } catch {
       return null;
     }
+  }
+
+  /** The signed-in user for a session cookie. Throws 401 when there is none or it is no longer valid. */
+  async authenticate(token: string | undefined): Promise<SessionUser> {
+    const session = this.verifySession(token);
+    if (!session) throw new UnauthorizedException('You need to log in');
+    return this.sessionUser(session.userId, session.version);
   }
 }

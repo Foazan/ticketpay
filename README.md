@@ -22,6 +22,7 @@ Phases 2 (foundation), 3 (customer and organizer frontend), 4 (Payment Facilitat
 | Organizer registration and dashboard: events, ticket categories, posters, transactions, sales analytics, ledger, reconciliation, merchant settings | Done |
 | Admin dashboard: merchant approval and suspension, event moderation, payments, ledger, reconciliation, service fee, webhook and blockchain monitoring with retries, gate staff, audit log | Done |
 | Simulated refund (`POST /v1/payments/:id/refund`) with ledger reversal and on-chain cancel | Done |
+| Account page for every role: edit name and phone, change password | Done |
 
 How payments work, the API, and how merchants verify webhooks: [docs/payments.md](docs/payments.md).
 How NFT tickets work, the custodial model and Sepolia setup: [docs/blockchain.md](docs/blockchain.md).
@@ -117,7 +118,7 @@ createdb ticketpay_test   # once; or: docker exec -it ticketpay-postgres-1 creat
 pnpm test
 ```
 
-The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 116 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
+The API tests migrate and seed `ticketpay_test`, use Redis database 1, and call the API over HTTP. Set `TEST_DATABASE_URL` or `TEST_REDIS_URL` to change them. 120 tests cover the catalog, authentication, CSRF, rate limiting, orders and quota, idempotency, the Midtrans adapter (against a local fake), webhooks, data isolation, organizer event management and reconciliation, the admin API and simulated refunds, account editing, QR and gate validation, and minting, on-chain redeem and refund cancels (against a Hardhat node the suite starts itself). `pnpm chain:test` runs the 22 contract tests.
 
 | Test matrix | Covered by |
 |---|---|
@@ -149,7 +150,7 @@ Every variable is listed with its source in `.env.example`. Required: `DATABASE_
 
 ## Security notes
 
-- Passwords are hashed with argon2id. Sessions are a signed JWT in an httpOnly, SameSite=Lax cookie.
+- Passwords are hashed with argon2id. Sessions are a signed JWT in an httpOnly, SameSite=Lax cookie that carries a session version: changing the password on the Account page raises it, which signs out every other device.
 - Every API route requires a session unless marked public, and role checks run on the server on every request.
 - State-changing requests must send the `x-ticketpay-csrf` header; CORS only allows `WEB_ORIGIN`.
 - Organizer and ticket queries filter by the merchant or user id from the session, never from the request.
